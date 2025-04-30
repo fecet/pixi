@@ -197,6 +197,24 @@ jobs:
             echo "setting JEMALLOC_SYS_WITH_LG_PAGE=$JEMALLOC_SYS_WITH_LG_PAGE"
           fi
 
+          # Fix lzma-sys linking issues on musl targets by disabling fortification
+          if [[ "${{ toJson(matrix.targets) }}" == *"musl"* ]]; then
+            export CFLAGS="${CFLAGS:-} -U_FORTIFY_SOURCE"
+            echo "setting CFLAGS to disable fortification: $CFLAGS"
+          fi
+
+          # Clear code signing environment variables if certificate is not available
+          if [[ -z "${CODESIGN_CERTIFICATE}" ]]; then
+            echo "Code signing certificate not available, clearing signing environment variables"
+            unset CODESIGN_CERTIFICATE
+            unset CODESIGN_CERTIFICATE_PASSWORD
+            unset CODESIGN_IDENTITY
+            unset CODESIGN_ADDITIONAL_ARGS
+            unset APPLEID_TEAMID
+            unset APPLEID_USERNAME
+            unset APPLEID_PASSWORD
+          fi
+
           # Actually do builds and make zips and whatnot
           dist build ${{ needs.plan.outputs.tag-flag }} --print=linkage --output-format=json ${{ matrix.dist_args }} > dist-manifest.json
           echo "dist ran successfully"
@@ -333,18 +351,6 @@ jobs:
             # Extract the artifact contents
             tar -xvf "$artifact" -O pixi > unpacked-artifacts/$base_name
           done
-      - name: Unpack binaries zip
-        run: |
-          set -e pipefail # fail if any command fails
-          for artifact in target/distrib/pixi-*.zip; do
-              echo artifact: $artifact
-              # Extract the base name without the extension
-              base_name=$(basename "$artifact" .zip)
-
-              # Extract the artifact contents
-              # Because zip is only used on windows we can assume the binary is an exe
-              unzip -p "$artifact" pixi.exe > unpacked-artifacts/$base_name.exe
-          done
 
       # Upload unpacked artifacts, not sure how to do this in one go as you have to name the artifact
       - name: Upload unpacked artifact for pixi-aarch64-unknown-linux-musl
@@ -359,41 +365,12 @@ jobs:
           name: artifacts-pixi-x86_64-unknown-linux-musl
           path: unpacked-artifacts/pixi-x86_64-unknown-linux-musl
 
-      - name: Upload unpacked artifact for pixi-aarch64-apple-darwin
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: artifacts-pixi-aarch64-apple-darwin
-          path: unpacked-artifacts/pixi-aarch64-apple-darwin
-
-      - name: Upload unpacked artifact for pixi-x86_64-apple-darwin
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: artifacts-pixi-x86_64-apple-darwin
-          path: unpacked-artifacts/pixi-x86_64-apple-darwin
-
-      - name: Upload unpacked artifact for pixi-x86_64-pc-windows-msvc.exe
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: artifacts-pixi-x86_64-pc-windows-msvc.exe
-          path: unpacked-artifacts/pixi-x86_64-pc-windows-msvc.exe
-
-      - name: Upload unpacked artifact for pixi-aarch64-pc-windows-msvc.exe
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: artifacts-pixi-aarch64-pc-windows-msvc.exe
-          path: unpacked-artifacts/pixi-aarch64-pc-windows-msvc.exe
-
       # Upload installer scripts
       - name: Upload install.sh
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: artifacts-install.sh
           path: install/install.sh
-      - name: Upload install.ps1
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: artifacts-install.ps1
-          path: install/install.ps1
 
   # Create a GitHub Release while uploading all files to it
   announce:
@@ -435,4 +412,4 @@ jobs:
           # Write and read notes from a file to avoid quoting breaking things
           echo "$ANNOUNCEMENT_BODY" > $RUNNER_TEMP/notes.txt
 
-          gh release create "${{ needs.plan.outputs.tag }}" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --draft --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/notes.txt" artifacts/*
+          gh release create "${{ needs.plan.outputs.tag }}" --repo "${{ github.repository }}" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --draft --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/notes.txt" artifacts/*
