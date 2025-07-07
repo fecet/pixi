@@ -383,18 +383,14 @@ async fn execute_task(
     task: &ExecutableTask<'_>,
     command_env: &HashMap<OsString, OsString>,
 ) -> Result<(), TaskExecutionError> {
-    let Some((script, stdin_pipe)) = task.prepare_execution(None)? else {
+    let Some((script, stdin_pipe, merged_env)) = task.prepare_execution(command_env)? else {
         // No script to execute, task is complete
         return Ok(());
     };
 
     let cwd = task.working_directory()?;
-    let state = deno_task_shell::ShellState::new(
-        command_env.clone(),
-        cwd,
-        Default::default(),
-        Default::default(),
-    );
+    let state =
+        deno_task_shell::ShellState::new(merged_env, cwd, Default::default(), Default::default());
 
     let status_code = deno_task_shell::execute_with_pipes(
         script,

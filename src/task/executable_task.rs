@@ -136,25 +136,18 @@ impl<'p> ExecutableTask<'p> {
             .as_single_command(Some(&self.args))
             .map_err(FailedToParseShellScript::ArgumentReplacement)?;
         if let Some(task) = task {
-            // Get the export specific environment variables
-            let export = get_export_specific_task_env(self.task.as_ref());
-
             // Append the command line arguments verbatim
             let cli_args = if let ArgValues::FreeFormArgs(additional_args) = &self.args {
                 additional_args
                     .iter()
-                    .format_with(" ", |arg, f| f(&format_args!("'{}'", arg)))
+                    .format_with(" ", |arg, f| f(&format_args!("'{arg}'")))
                     .to_string()
             } else {
                 String::new()
             };
 
             // Skip the export if it's empty, to avoid newlines
-            let full_script = if export.is_empty() {
-                format!("{} {}", task, cli_args)
-            } else {
-                format!("{}\n{} {}", export, task, cli_args)
-            };
+            let full_script = format!("{task} {cli_args}");
 
             Ok(Some(full_script))
         } else {
@@ -233,39 +226,38 @@ impl<'p> ExecutableTask<'p> {
         ExecutableTaskConsoleDisplay { task: self }
     }
 
-    /// Prepares the script and stdin pipe for execution.
+    /// Prepares the script, stdin pipe, and environment variables for execution.
     ///
     /// This method handles the common logic for both `execute_with_pipes` and the CLI's `execute_task`.
     /// Returns None if there is no script to execute (e.g., for alias tasks).
+    #[allow(clippy::type_complexity)]
     pub(crate) fn prepare_execution(
         &self,
-        input: Option<&[u8]>,
+        command_env: &HashMap<OsString, OsString>,
     ) -> Result<
         Option<(
             deno_task_shell::parser::SequentialList,
             deno_task_shell::ShellPipeReader,
+            HashMap<OsString, OsString>,
         )>,
         FailedToParseShellScript,
     > {
+        // Merge task-specific environment variables with command environment
+        let mut merged_env = command_env.clone();
+        if let Some(task_envs) = self.task().env() {
+            for (key, value) in task_envs {
+                merged_env.insert(OsString::from(key), OsString::from(value));
+            }
+        }
+
         let Some(interpreter) = self.task().interpreter() else {
             let Some(deno_script) = self.as_deno_script()? else {
                 // No script to execute
                 return Ok(None);
             };
 
-            let (stdin, mut stdin_writer) = pipe();
-            if let Some(stdin_data) = input {
-                stdin_writer
-                    .write_all(stdin_data)
-                    .expect("should be able to write to stdin");
-            }
-            drop(stdin_writer); // prevent a deadlock by dropping the writer
-            return Ok(Some((deno_script, stdin)));
-        };
-
-        let Some(full_script) = self.as_script()? else {
-            // No script to execute
-            return Ok(None);
+            let stdin = deno_task_shell::ShellPipeReader::stdin();
+            return Ok(Some((deno_script, stdin, merged_env)));
         };
         let interpreter_script = deno_task_shell::parser::parse(interpreter).map_err(|e| {
             FailedToParseShellScript::ParseError {
@@ -273,21 +265,25 @@ impl<'p> ExecutableTask<'p> {
                 task: interpreter.to_string(),
             }
         })?;
+        let Some(full_script) = self.as_script()? else {
+            let stdin = deno_task_shell::ShellPipeReader::stdin();
+            return Ok(Some((interpreter_script, stdin, merged_env)));
+        };
+
         let (stdin, mut stdin_writer) = pipe();
         stdin_writer
             .write_all(full_script.as_bytes())
             .expect("Failed to write script to pipe");
         drop(stdin_writer);
-        Ok(Some((interpreter_script, stdin)))
+        Ok(Some((interpreter_script, stdin, merged_env)))
     }
 
     /// Executes the task and capture its output.
     pub async fn execute_with_pipes(
         &self,
         command_env: &HashMap<OsString, OsString>,
-        input: Option<&[u8]>,
     ) -> Result<RunOutput, TaskExecutionError> {
-        let Some((script, stdin)) = self.prepare_execution(input)? else {
+        let Some((script, stdin, merged_env)) = self.prepare_execution(command_env)? else {
             // No script to execute, return empty output
             return Ok(RunOutput {
                 exit_code: 0,
@@ -299,12 +295,7 @@ impl<'p> ExecutableTask<'p> {
         let cwd = self.working_directory()?;
         let (stdout, stdout_handle) = get_output_writer_and_handle();
         let (stderr, stderr_handle) = get_output_writer_and_handle();
-        let state = ShellState::new(
-            command_env.clone(),
-            cwd,
-            Default::default(),
-            Default::default(),
-        );
+        let state = ShellState::new(merged_env, cwd, Default::default(), Default::default());
         let code = execute_with_pipes(script, state, stdin, stdout, stderr).await;
         Ok(RunOutput {
             exit_code: code,
@@ -427,24 +418,6 @@ fn get_output_writer_and_handle() -> (ShellPipeWriter, JoinHandle<String>) {
     (writer, handle)
 }
 
-/// Task specific environment variables.
-fn get_export_specific_task_env(task: &Task) -> String {
-    // Append the environment variables if they don't exist
-    let mut export = String::new();
-    if let Some(env) = task.env() {
-        for (key, value) in env {
-            if value.contains(format!("${}", key).as_str()) || std::env::var(key.as_str()).is_err()
-            {
-                tracing::info!("Setting environment variable: {}=\"{}\"", key, value);
-                export.push_str(&format!("export \"{}={}\";\n", key, value));
-            } else {
-                tracing::info!("Environment variable {} already set", key);
-            }
-        }
-    }
-    export
-}
-
 /// Determine the environment variables to use when executing a command. The
 /// method combines the activation environment with the system environment
 /// variables.
@@ -502,58 +475,6 @@ mod tests {
         # Required to run tests
         platforms = ["linux-64", "osx-64", "win-64", "osx-arm64", "linux-ppc64le", "linux-aarch64"]
         "#;
-
-    #[test]
-    fn test_export_specific_task_env() {
-        let file_contents = r#"
-            [tasks]
-            test = {cmd = "test", cwd = "tests", env = {FOO = "bar", BAR = "$FOO"}}
-            "#;
-        let workspace = Workspace::from_str(
-            Path::new("pixi.toml"),
-            &format!("{PROJECT_BOILERPLATE}\n{file_contents}"),
-        )
-        .unwrap();
-
-        let task = workspace
-            .default_environment()
-            .task(&TaskName::from("test"), None)
-            .unwrap();
-
-        let export = get_export_specific_task_env(task);
-
-        assert_eq!(export, "export \"FOO=bar\";\nexport \"BAR=$FOO\";\n");
-    }
-
-    #[test]
-    fn test_as_script() {
-        let file_contents = r#"
-            [tasks]
-            test = {cmd = "test", cwd = "tests", env = {FOO = "bar"}}
-            "#;
-
-        let workspace = Workspace::from_str(
-            Path::new("pixi.toml"),
-            &format!("{PROJECT_BOILERPLATE}\n{file_contents}"),
-        )
-        .unwrap();
-
-        let task = workspace
-            .default_environment()
-            .task(&TaskName::from("test"), None)
-            .unwrap();
-
-        let executable_task = ExecutableTask {
-            workspace: &workspace,
-            name: Some("test".into()),
-            task: Cow::Borrowed(task),
-            run_environment: workspace.default_environment(),
-            args: ArgValues::default(),
-        };
-
-        let script = executable_task.as_script().unwrap().unwrap();
-        assert_eq!(script, "export \"FOO=bar\";\n\ntest ");
-    }
 
     #[tokio::test]
     async fn test_get_task_env() {
