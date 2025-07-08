@@ -12,3 +12,4 @@ pytest-temp
 /vendor
 *.conda
 *.local.*
+.*.swp
