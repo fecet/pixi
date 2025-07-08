@@ -1,0 +1,15 @@
+#:schema ./../../schema.json
+
+[project]
+channels = ["conda-forge"]
+description = "Invalid interpreter examples - empty string in array"
+name = "invalid-interpreter-empty-string-in-array"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[dependencies]
+python = ">=3.8"
+
+[tasks]
+# This should be invalid - array with empty string element
+empty-string-in-array = { cmd = "echo 'test'", interpreter = [""] }

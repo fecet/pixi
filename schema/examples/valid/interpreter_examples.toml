@@ -1,0 +1,65 @@
+#:schema ./../../schema.json
+
+[project]
+channels = ["conda-forge"]
+description = "Examples demonstrating interpreter field usage"
+name = "interpreter-examples"
+platforms = ["linux-64", "win-64", "osx-64", "osx-arm64"]
+version = "0.1.0"
+
+[dependencies]
+python = ">=3.8"
+
+[tasks]
+# Missing interpreter - uses deno-task-shell (default behavior)
+default-shell = { cmd = "echo 'Using deno-task-shell (default)'" }
+
+# String interpreter examples
+bash-script = { cmd = "echo 'Hello from bash'", interpreter = "bash" }
+python-script = { cmd = "print('Hello from Python')", interpreter = "python" }
+shell-script = { cmd = "echo 'Hello from sh'", interpreter = "sh" }
+
+# Array interpreter examples (new functionality)
+bash-debug = { cmd = "echo 'Debug mode bash'", interpreter = ["bash", "-x"] }
+node-script = { cmd = "console.log('Hello from Node.js')", interpreter = [
+    "node",
+    "--experimental-modules",
+] }
+python-optimize = { cmd = "print('Optimized Python')", interpreter = [
+    "python",
+    "-O",
+] }
+python-unbuffered = { cmd = "print('Unbuffered Python output')", interpreter = [
+    "python",
+    "-u",
+] }
+
+# Complex multi-line scripts with interpreters
+complex-bash = { cmd = """
+for i in {1..3}; do
+    echo "Iteration $i"
+done
+echo "Bash script complete"
+""", interpreter = "bash" }
+
+complex-python = { cmd = """
+import sys
+print(f"Python version: {sys.version}")
+for i in range(3):
+    print(f"Python iteration {i}")
+""", interpreter = ["python", "-u"] }
+
+# Environment-specific examples
+env-vars = { cmd = "echo $PATH", interpreter = "bash", env = { CUSTOM_VAR = "test" } }
+working-dir = { cmd = "pwd", interpreter = "bash", cwd = "." }
+
+# Task dependencies with interpreters
+run-tests = { cmd = "echo 'Running tests...'", interpreter = "bash", depends-on = [
+    "setup",
+] }
+setup = { cmd = "echo 'Setting up...'", interpreter = "bash" }
+
+# Task with arguments and interpreter
+parameterized = { cmd = "echo 'Hello from parameterized {{ message }} task'", interpreter = "bash", args = [
+    { arg = "message", default = "default message" },
+] }

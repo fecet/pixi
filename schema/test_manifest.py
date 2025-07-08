@@ -70,3 +70,100 @@ def test_real_manifests(real_manifest_path, validator):
         manifest = f.read()
     manifest_toml = tomllib.loads(manifest)
     validator.validate(manifest_toml)
+
+
+def test_interpreter_field_validation(validator):
+    """Test that the interpreter field validation works correctly."""
+
+    # Test 1: Missing interpreter (should be valid - uses deno-task-shell)
+    manifest_no_interpreter = {
+        'project': {
+            'name': 'test',
+            'description': 'Test project',
+            'channels': ['conda-forge'],
+            'platforms': ['linux-64'],
+            'version': '0.1.0'
+        },
+        'tasks': {
+            'test': {'cmd': 'echo test'}  # No interpreter field
+        }
+    }
+    validator.validate(manifest_no_interpreter)  # Should not raise
+
+    # Test 2: String interpreter (should be valid)
+    manifest_string_interpreter = {
+        'project': {
+            'name': 'test',
+            'description': 'Test project',
+            'channels': ['conda-forge'],
+            'platforms': ['linux-64'],
+            'version': '0.1.0'
+        },
+        'tasks': {
+            'test': {'cmd': 'echo test', 'interpreter': 'bash'}
+        }
+    }
+    validator.validate(manifest_string_interpreter)  # Should not raise
+
+    # Test 3: Array interpreter (should be valid)
+    manifest_array_interpreter = {
+        'project': {
+            'name': 'test',
+            'description': 'Test project',
+            'channels': ['conda-forge'],
+            'platforms': ['linux-64'],
+            'version': '0.1.0'
+        },
+        'tasks': {
+            'test': {'cmd': 'echo test', 'interpreter': ['python', '-u']}
+        }
+    }
+    validator.validate(manifest_array_interpreter)  # Should not raise
+
+    # Test 4: Empty string interpreter (should be invalid)
+    manifest_empty_string = {
+        'project': {
+            'name': 'test',
+            'description': 'Test project',
+            'channels': ['conda-forge'],
+            'platforms': ['linux-64'],
+            'version': '0.1.0'
+        },
+        'tasks': {
+            'test': {'cmd': 'echo test', 'interpreter': ''}
+        }
+    }
+    with pytest.raises(jsonschema.ValidationError):
+        validator.validate(manifest_empty_string)
+
+    # Test 5: Empty array interpreter (should be invalid)
+    manifest_empty_array = {
+        'project': {
+            'name': 'test',
+            'description': 'Test project',
+            'channels': ['conda-forge'],
+            'platforms': ['linux-64'],
+            'version': '0.1.0'
+        },
+        'tasks': {
+            'test': {'cmd': 'echo test', 'interpreter': []}
+        }
+    }
+    with pytest.raises(jsonschema.ValidationError):
+        validator.validate(manifest_empty_array)
+
+    # Test 6: Array with empty string (should be invalid)
+    manifest_array_empty_string = {
+        'project': {
+            'name': 'test',
+            'description': 'Test project',
+            'channels': ['conda-forge'],
+            'platforms': ['linux-64'],
+            'version': '0.1.0'
+        },
+        'tasks': {
+            'test': {'cmd': 'echo test', 'interpreter': ['']}
+        }
+    }
+    with pytest.raises(jsonschema.ValidationError):
+        validator.validate(manifest_array_empty_string)

@@ -1,0 +1,15 @@
+#:schema ./../../schema.json
+
+[project]
+channels = ["conda-forge"]
+description = "Invalid interpreter examples for testing schema validation"
+name = "invalid-interpreter"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[dependencies]
+python = ">=3.8"
+
+[tasks]
+# This should be invalid - empty string interpreter
+empty-string-interpreter = { cmd = "echo 'test'", interpreter = "" }
