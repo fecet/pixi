@@ -1942,7 +1942,7 @@
         },
         "interpreter": {
           "title": "Interpreter",
-          "description": "The interpreter to use for executing the command (e.g., 'bash', 'sh', 'nu'). Can be a string or array of strings.",
+          "description": "The interpreter to use for executing the command (e.g., 'bash', 'sh', 'nu'). Can be a single string or an array of strings for passing arguments to the interpreter.",
           "anyOf": [
             {
               "type": "string",
@@ -1958,11 +1958,17 @@
             }
           ],
           "examples": [
-            "bash", 
-            "sh", 
-            "nu", 
-            ["python", "-u"], 
-            ["bash", "-x"]
+            "bash",
+            "sh",
+            "nu",
+            [
+              "python",
+              "-u"
+            ],
+            [
+              "bash",
+              "-x"
+            ]
           ]
         },
         "outputs": {

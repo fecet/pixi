@@ -389,10 +389,10 @@ class TaskInlineTable(StrictBaseModel):
         description="The arguments to pass to the task",
         examples=["arg1", "arg2"],
     )
-    interpreter: NonEmptyStr | None = Field(
+    interpreter: NonEmptyStr | Annotated[list[NonEmptyStr], Field(min_length=1)] | None = Field(
         None,
-        description="The interpreter to use for executing the command (e.g., 'bash', 'sh', 'nu').",
-        examples=["bash", "sh", "nu"],
+        description="The interpreter to use for executing the command (e.g., 'bash', 'sh', 'nu'). Can be a single string or an array of strings for passing arguments to the interpreter.",
+        examples=["bash", "sh", "nu", ["python", "-u"], ["bash", "-x"]],
     )
 
 
