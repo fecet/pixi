@@ -101,6 +101,11 @@ build = "conda build ."
 test = { cmd = "pytest", cwd = "tests", depends-on = [
   "build",
 ], description = "Run tests using pytests after building." }
+test-interpreter-array = { cmd = "print('Hello from python')", interpreter = [
+    "python",
+    "-u",
+] }
+test-interpreter-string = { cmd = "echo 'Hello from bash'", interpreter = "bash" }
 test2 = { cmd = "pytest", cwd = "tests" }
 test3 = { cmd = "pytest", depends-on = ["test2"] }
 test4 = { cmd = "pytest", cwd = "tests", depends-on = ["test2"] }
@@ -166,6 +171,7 @@ testpypi1 = "*"
 [target.linux-64.tasks]
 build = "conda build ."
 test = { cmd = "pytest", cwd = "tests", depends-on = ["build"] }
+test-interpreter-linux = { cmd = "echo 'Linux specific interpreter'", interpreter = "bash" }
 test2 = { cmd = "pytest", cwd = "tests" }
 test3 = { cmd = "pytest", depends-on = ["test2"] }
 test4 = { cmd = "pytest", cwd = "tests", depends-on = ["test2"] }

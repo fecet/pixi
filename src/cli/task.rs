@@ -225,7 +225,7 @@ impl From<AddArgs> for Task {
                 description,
                 clean_env,
                 args,
-                interpreter,
+                interpreter: interpreter.map(|i| vec![i]),
             }))
         }
     }
@@ -606,7 +606,7 @@ impl From<&Task> for TaskInfo {
                     .map(|output| output.source().to_string())
                     .collect()
             }),
-            interpreter: task.interpreter().map(|i| i.to_string()),
+            interpreter: task.interpreter().map(|i| i.join(" ")),
         }
     }
 }

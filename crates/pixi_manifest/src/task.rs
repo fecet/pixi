@@ -275,7 +275,7 @@ impl Task {
     }
 
     /// Returns the interpreter for the task.
-    pub fn interpreter(&self) -> Option<&str> {
+    pub fn interpreter(&self) -> Option<&[String]> {
         match self {
             Task::Execute(exe) => exe.interpreter.as_deref(),
             _ => None,
@@ -348,7 +348,7 @@ pub struct Execute {
     pub args: Option<Vec<TaskArg>>,
 
     /// The interpreter to use for executing the command (e.g., "bash", "sh", "nu")
-    pub interpreter: Option<String>,
+    pub interpreter: Option<Vec<String>>,
 }
 
 impl From<Execute> for Task {
@@ -755,7 +755,13 @@ impl From<Task> for Item {
                     table.insert("description", description.into());
                 }
                 if let Some(interpreter) = &process.interpreter {
-                    table.insert("interpreter", interpreter.into());
+                    let mut interpreter_array = Array::new();
+                    for item in interpreter {
+                        interpreter_array.push(Value::String(toml_edit::Formatted::new(
+                            item.as_str().to_string(),
+                        )));
+                    }
+                    table.insert("interpreter", Value::Array(interpreter_array));
                 }
                 Item::Value(Value::InlineTable(table))
             }

@@ -1942,13 +1942,27 @@
         },
         "interpreter": {
           "title": "Interpreter",
-          "description": "The interpreter to use for executing the command (e.g., 'bash', 'sh', 'nu').",
-          "type": "string",
-          "minLength": 1,
+          "description": "The interpreter to use for executing the command (e.g., 'bash', 'sh', 'nu'). Can be a string or array of strings.",
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1
+            }
+          ],
           "examples": [
-            "bash",
-            "sh",
-            "nu"
+            "bash", 
+            "sh", 
+            "nu", 
+            ["python", "-u"], 
+            ["bash", "-x"]
           ]
         },
         "outputs": {

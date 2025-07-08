@@ -4,6 +4,7 @@ use std::{
     ffi::OsString,
     fmt::{Display, Formatter},
     path::PathBuf,
+    process::Stdio,
 };
 
 use deno_task_shell::{
@@ -17,7 +18,7 @@ use pixi_manifest::{Task, TaskName, task::ArgValues, task::TemplateStringError};
 use pixi_progress::await_in_progress;
 use rattler_lock::LockFile;
 use thiserror::Error;
-use tokio::task::JoinHandle;
+use tokio::{io::AsyncWriteExt, process, task::JoinHandle};
 
 use super::task_hash::{InputHashesError, NameHash, TaskCache, TaskHash};
 use crate::{
@@ -64,6 +65,9 @@ pub enum TaskExecutionError {
 
     #[error(transparent)]
     FailedToParseShellScript(#[from] FailedToParseShellScript),
+
+    #[error("failed to execute interpreter command")]
+    InterpreterExecution(#[from] std::io::Error),
 }
 
 #[derive(Debug, Error, Diagnostic)]
@@ -250,7 +254,8 @@ impl<'p> ExecutableTask<'p> {
             }
         }
 
-        let Some(interpreter) = self.task().interpreter() else {
+        // Only use deno_task_shell if no interpreter is specified
+        if self.task().interpreter().is_none() {
             let Some(deno_script) = self.as_deno_script()? else {
                 // No script to execute
                 return Ok(None);
@@ -258,24 +263,10 @@ impl<'p> ExecutableTask<'p> {
 
             let stdin = deno_task_shell::ShellPipeReader::stdin();
             return Ok(Some((deno_script, stdin, merged_env)));
-        };
-        let interpreter_script = deno_task_shell::parser::parse(interpreter).map_err(|e| {
-            FailedToParseShellScript::ParseError {
-                source: e,
-                task: interpreter.to_string(),
-            }
-        })?;
-        let Some(full_script) = self.as_script()? else {
-            let stdin = deno_task_shell::ShellPipeReader::stdin();
-            return Ok(Some((interpreter_script, stdin, merged_env)));
-        };
+        }
 
-        let (stdin, mut stdin_writer) = pipe();
-        stdin_writer
-            .write_all(full_script.as_bytes())
-            .expect("Failed to write script to pipe");
-        drop(stdin_writer);
-        Ok(Some((interpreter_script, stdin, merged_env)))
+        // For interpreter execution, we don't use deno_task_shell at all
+        Ok(None)
     }
 
     /// Executes the task and capture its output.
@@ -283,6 +274,14 @@ impl<'p> ExecutableTask<'p> {
         &self,
         command_env: &HashMap<OsString, OsString>,
     ) -> Result<RunOutput, TaskExecutionError> {
+        // If interpreter is specified, use std::process::Command directly
+        if let Some(interpreter) = self.task().interpreter() {
+            return self
+                .execute_with_interpreter(command_env, interpreter)
+                .await;
+        }
+
+        // Otherwise use deno_task_shell
         let Some((script, stdin, merged_env)) = self.prepare_execution(command_env)? else {
             // No script to execute, return empty output
             return Ok(RunOutput {
@@ -301,6 +300,68 @@ impl<'p> ExecutableTask<'p> {
             exit_code: code,
             stdout: stdout_handle.await.expect("should be able to get stdout"),
             stderr: stderr_handle.await.expect("should be able to get stderr"),
+        })
+    }
+
+    pub async fn execute_with_interpreter(
+        &self,
+        command_env: &HashMap<OsString, OsString>,
+        interpreter: &[String],
+    ) -> Result<RunOutput, TaskExecutionError> {
+        if interpreter.is_empty() {
+            return Ok(RunOutput {
+                exit_code: 0,
+                stdout: String::new(),
+                stderr: String::new(),
+            });
+        }
+
+        // Merge task-specific environment variables with command environment
+        let mut merged_env = command_env.clone();
+        if let Some(task_envs) = self.task().env() {
+            for (key, value) in task_envs {
+                merged_env.insert(OsString::from(key), OsString::from(value));
+            }
+        }
+
+        let Some(script) = self.as_script()? else {
+            return Ok(RunOutput {
+                exit_code: 0,
+                stdout: String::new(),
+                stderr: String::new(),
+            });
+        };
+
+        let cwd = self.working_directory()?;
+
+        // Create command with interpreter
+        let mut cmd = process::Command::new(&interpreter[0]);
+
+        // Add any additional arguments to the interpreter
+        if interpreter.len() > 1 {
+            cmd.args(&interpreter[1..]);
+        }
+
+        cmd.current_dir(cwd)
+            .envs(merged_env)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        let mut child = cmd.spawn()?;
+
+        // Write script to stdin
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(script.as_bytes()).await?;
+            stdin.shutdown().await?;
+        }
+
+        let output = child.wait_with_output().await?;
+
+        Ok(RunOutput {
+            exit_code: output.status.code().unwrap_or(-1),
+            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
         })
     }
 
