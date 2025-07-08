@@ -54,6 +54,15 @@ Now that we've defined a `pixi` task which allows us to check that our package c
 [tasks]
 start = "python -c 'import cpp_math as b; print(b.add(1, 2))'"
 ```
+...or equivalently...
+```toml
+[tasks.start]
+cwd = """
+  import cpp_math as b
+  print(b.add(1, 2))
+  """
+interpreter = ["python", ""]
+```
 
 Executing the tasks works as expected
 
