@@ -1437,10 +1437,10 @@ def test_task_interpreter_advanced(pixi: Path, tmp_pixi_workspace: Path) -> None
         },
         "remove-spaces": {
             "cmd": "hello world",
-            "interpreter": "pixi run remove-spaces-blackbox",
+            "interpreter": [str(pixi), "run", "remove-spaces-blackbox"],
         },
         "interpreter-as-pipe": {
-            "cmd": "echo 'hello world' | pixi run remove-spaces-blackbox",
+            "cmd": f"echo 'hello world' | {pixi} run remove-spaces-blackbox",
         },
     }
 

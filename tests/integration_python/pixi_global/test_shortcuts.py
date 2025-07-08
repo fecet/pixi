@@ -23,6 +23,7 @@ def setup_data(tmp_path: Path) -> SetupData:
     env = {
         "PIXI_HOME": str(pixi_home),
         "HOME": str(data_home),  # Used for macOS and Linux
+        "XDG_DATA_HOME": str(data_home / ".local" / "share"),  # Used for Linux desktop entries
         "MENUINST_FAKE_DIRECTORIES": str(data_home),  # Used for Windows
     }
     return SetupData(pixi_home=pixi_home, data_home=data_home, env=env)
