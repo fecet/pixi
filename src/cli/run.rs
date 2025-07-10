@@ -402,15 +402,17 @@ async fn execute_task(
                     TaskExecutionError::InterpreterExecution(err)
                 }
             })?;
-        if output.exit_code != 0 {
-            return Err(TaskExecutionError::NonZeroExitCode(output.exit_code));
-        }
+
         // Print stdout and stderr to console
         if !output.stdout.is_empty() {
             print!("{}", output.stdout);
         }
         if !output.stderr.is_empty() {
             eprint!("{}", output.stderr);
+        }
+
+        if output.exit_code != 0 {
+            return Err(TaskExecutionError::NonZeroExitCode(output.exit_code));
         }
         return Ok(());
     }

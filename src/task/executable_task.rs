@@ -7,6 +7,7 @@ use std::{
     process::Stdio,
 };
 
+use anyhow;
 use deno_task_shell::{
     ShellPipeWriter, ShellState, execute_with_pipes, parser::SequentialList, pipe,
 };
@@ -337,26 +338,85 @@ impl<'p> ExecutableTask<'p> {
         // Create command with interpreter
         let mut cmd = process::Command::new(&interpreter[0]);
 
-        // Add any additional arguments to the interpreter
-        if interpreter.len() > 1 {
-            cmd.args(&interpreter[1..]);
-        }
+        // Check if interpreter uses -c flag (expects script as argument)
+        let uses_c_flag = interpreter.len() > 1 && interpreter.last() == Some(&"-c".to_string());
 
-        cmd.current_dir(cwd)
-            .envs(merged_env)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+        if uses_c_flag {
+            // For interpreters like "nu -c", pass script as argument
+            cmd.args(&interpreter[1..]);
+            cmd.arg(&script);
+            cmd.current_dir(cwd)
+                .envs(merged_env)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+        } else {
+            // For interpreters that read from stdin
+            cmd.args(&interpreter[1..]);
+            cmd.current_dir(cwd)
+                .envs(merged_env)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+        }
 
         let mut child = cmd.spawn()?;
 
-        // Write script to stdin
-        if let Some(mut stdin) = child.stdin.take() {
-            stdin.write_all(script.as_bytes()).await?;
-            stdin.shutdown().await?;
+        // Write script to stdin only if not using -c flag
+        if !uses_c_flag {
+            if let Some(mut stdin) = child.stdin.take() {
+                stdin.write_all(script.as_bytes()).await?;
+                stdin.shutdown().await?;
+            }
         }
 
         let output = child.wait_with_output().await?;
+
+        // Check for common interpreter errors and provide helpful guidance
+        if output.status.code() != Some(0) {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stdout = String::from_utf8_lossy(&output.stdout);
+
+            // Check for signs that the interpreter doesn't accept stdin scripts
+            if stderr.contains("not a TTY")
+                || stderr.contains("STDIN is not a TTY")
+                || stderr.contains("interactive shell")
+                || stderr.contains("terminal")
+            {
+                // Try to get help information from the interpreter
+                let help_output = process::Command::new(&interpreter[0])
+                    .arg("--help")
+                    .output()
+                    .await;
+
+                let help_message = match help_output {
+                    Ok(help) if help.status.success() => {
+                        format!(
+                            "\n\nInterpreter help information:\n{}",
+                            String::from_utf8_lossy(&help.stdout)
+                        )
+                    }
+                    _ => String::new(),
+                };
+
+                return Err(TaskExecutionError::FailedToParseShellScript(
+                    FailedToParseShellScript::ParseError {
+                        source: anyhow::anyhow!(
+                            "The interpreter '{}' does not accept scripts via stdin. \
+                             Most interpreters expect to receive their script content through stdin, \
+                             but this interpreter requires a different approach (e.g., using flags like '-c' \
+                             or providing script files).\
+                             {}\
+                             \n\nOriginal error:\nstdout: {}\nstderr: {}",
+                            interpreter[0],
+                            help_message,
+                            stdout,
+                            stderr
+                        ),
+                        task: format!("interpreter: {}", interpreter.join(" ")),
+                    },
+                ));
+            }
+        }
 
         Ok(RunOutput {
             exit_code: output.status.code().unwrap_or(-1),

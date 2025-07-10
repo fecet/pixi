@@ -1,4 +1,4 @@
-#:schema ./../../schema.json
+#:schema ../../schema/schema.json
 
 [project]
 channels = ["conda-forge"]
@@ -8,7 +8,7 @@ platforms = ["linux-64", "win-64", "osx-64", "osx-arm64"]
 version = "0.1.0"
 
 [dependencies]
-nushell = ">=0.95"
+nushell = "==0.105.1"
 
 # Basic nushell interpreter examples
 [tasks.basic_echo_demo]
@@ -225,7 +225,7 @@ $data
 | sort-by total_size --reverse
 | print
 """
-interpreter = ["nu", "--no-config-file"]
+interpreter = ["nu", "-c", "--no-config-file"]
 
 # Working with different data formats
 [tasks.data_formats_demo]
@@ -299,7 +299,7 @@ $env | transpose key value | first 5 | print
 print "\nCommand capabilities:"
 help commands | where category == "core" | first 10 | get name | print
 """
-interpreter = ["nu", "--no-config-file"]
+interpreter = ["nu", "-c", "--no-config-file"]
 
 # Task dependencies with nushell
 [tasks.setup_data_demo]

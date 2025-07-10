@@ -351,3 +351,165 @@ async fn test_task_with_interpreter() {
     assert_eq!(result.exit_code, 0);
     assert_eq!(result.stdout, "Hello from Python");
 }
+
+#[tokio::test]
+async fn test_nushell_test_project() {
+    let nushell_manifest = r#"
+[project]
+channels = ["conda-forge"]
+description = "Examples demonstrating nushell (nu) interpreter usage in pixi tasks"
+name = "nushell-examples"
+platforms = ["linux-64", "win-64", "osx-64", "osx-arm64"]
+version = "0.1.0"
+
+[dependencies]
+nushell = "==0.105.1"
+
+[tasks.basic_print_demo]
+cmd = "print 'Hello from Nushell!'"
+interpreter = ["nu", "-c"]
+
+[tasks.table_demo]
+cmd = '''
+[[name, age, city];
+ [Alice, 30, "New York"],
+ [Bob, 25, "London"],
+ [Charlie, 35, "Tokyo"]]
+| where age > 27
+| select name city
+| print
+'''
+interpreter = ["nu", "-c"]
+
+[tasks.math_demo]
+cmd = '''
+let data = [10, 20, 30, 40, 50]
+let sum = ($data | math sum)
+let avg = ($data | math avg)
+print $"Sum: ($sum), Average: ($avg)"
+'''
+interpreter = ["nu", "-c"]
+"#;
+
+    let pixi = PixiControl::from_manifest(nushell_manifest).unwrap();
+
+    // Test basic nushell functionality
+    let result = pixi
+        .run(Args {
+            task: vec!["basic_print_demo".to_string()],
+            workspace_config: WorkspaceConfig {
+                manifest_path: None,
+            },
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(result.exit_code, 0);
+    assert_eq!(result.stdout, "Hello from Nushell!\n");
+
+    // Test table processing
+    let result = pixi
+        .run(Args {
+            task: vec!["table_demo".to_string()],
+            workspace_config: WorkspaceConfig {
+                manifest_path: None,
+            },
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(result.exit_code, 0);
+    assert!(result.stdout.contains("Alice"));
+    assert!(result.stdout.contains("Charlie"));
+    assert!(result.stdout.contains("New York"));
+    assert!(result.stdout.contains("Tokyo"));
+
+    // Test mathematical operations
+    let result = pixi
+        .run(Args {
+            task: vec!["math_demo".to_string()],
+            workspace_config: WorkspaceConfig {
+                manifest_path: None,
+            },
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(result.exit_code, 0);
+    assert!(result.stdout.contains("Sum: 150"));
+    assert!(result.stdout.contains("Average: 30"));
+}
+
+// TODO: Enable when nushell is available in test environment
+// #[tokio::test]
+// async fn test_task_with_nushell_interpreter() {
+//     let pixi = PixiControl::new().unwrap();
+//     pixi.init().without_channels().await.unwrap();
+//
+//     // Add nushell dependency
+//     pixi.add("nushell==0.105.1").await.unwrap();
+//
+//     pixi.tasks()
+//         .add("nushell-test".into(), None, FeatureName::default())
+//         .with_commands(["print 'Hello from Nushell!'"])
+//         .with_interpreter("nu -c")
+//         .execute()
+//         .await
+//         .unwrap();
+//
+//     let result = pixi
+//         .run(Args {
+//             task: vec!["nushell-test".to_string()],
+//             workspace_config: WorkspaceConfig {
+//                 manifest_path: None,
+//             },
+//             ..Default::default()
+//         })
+//         .await
+//         .unwrap();
+//
+//     assert_eq!(result.exit_code, 0);
+//     assert_eq!(result.stdout, "Hello from Nushell!\n");
+// }
+
+// TODO: Enable when nushell is available in test environment
+// #[tokio::test]
+// async fn test_task_with_nushell_table_processing() {
+//     let pixi = PixiControl::new().unwrap();
+//     pixi.init().without_channels().await.unwrap();
+//
+//     // Add nushell dependency
+//     pixi.add("nushell==0.105.1").await.unwrap();
+//
+//     pixi.tasks()
+//         .add("nushell-table-test".into(), None, FeatureName::default())
+//         .with_commands([r#"
+// [[name, age];
+//  [Alice, 30],
+//  [Bob, 25]]
+// | where age > 27
+// | get name
+// | str join ", "
+// | print"#])
+//         .with_interpreter("nu -c")
+//         .execute()
+//         .await
+//         .unwrap();
+//
+//     let result = pixi
+//         .run(Args {
+//             task: vec!["nushell-table-test".to_string()],
+//             workspace_config: WorkspaceConfig {
+//                 manifest_path: None,
+//             },
+//             ..Default::default()
+//         })
+//         .await
+//         .unwrap();
+//
+//     assert_eq!(result.exit_code, 0);
+//     assert_eq!(result.stdout, "Alice\n");
+// }
