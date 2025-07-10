@@ -136,9 +136,6 @@ impl<'p> ExecutableTask<'p> {
             .as_single_command(Some(&self.args))
             .map_err(FailedToParseShellScript::ArgumentReplacement)?;
         if let Some(task) = task {
-            // Get the export specific environment variables
-            let export = get_export_specific_task_env(self.task.as_ref());
-
             // Append the command line arguments verbatim
             let cli_args = if let ArgValues::FreeFormArgs(additional_args) = &self.args {
                 additional_args
@@ -150,11 +147,7 @@ impl<'p> ExecutableTask<'p> {
             };
 
             // Skip the export if it's empty, to avoid newlines
-            let full_script = if export.is_empty() {
-                format!("{} {}", task, cli_args)
-            } else {
-                format!("{}\n{} {}", export, task, cli_args)
-            };
+            let full_script = format!("{} {}", task, cli_args);
 
             Ok(Some(full_script))
         } else {
@@ -169,9 +162,14 @@ impl<'p> ExecutableTask<'p> {
         &self,
     ) -> Result<Option<SequentialList>, FailedToParseShellScript> {
         let full_script = self.as_script()?;
-
-        if let Some(full_script) = full_script {
+        if let Some(mut full_script) = full_script {
             tracing::debug!("Parsing shell script: {}", full_script);
+
+            // Get the export specific environment variables
+            let export = get_export_specific_task_env(self.task.as_ref());
+            if !export.is_empty() {
+                full_script = format!("{export}\n{full_script}");
+            }
 
             // Parse the shell command
             deno_task_shell::parser::parse(full_script.trim())
@@ -239,7 +237,6 @@ impl<'p> ExecutableTask<'p> {
     /// Returns None if there is no script to execute (e.g., for alias tasks).
     pub(crate) fn prepare_execution(
         &self,
-        input: Option<&[u8]>,
     ) -> Result<
         Option<(
             deno_task_shell::parser::SequentialList,
@@ -253,26 +250,24 @@ impl<'p> ExecutableTask<'p> {
                 return Ok(None);
             };
 
-            let (stdin, mut stdin_writer) = pipe();
-            if let Some(stdin_data) = input {
-                stdin_writer
-                    .write_all(stdin_data)
-                    .expect("should be able to write to stdin");
-            }
-            drop(stdin_writer); // prevent a deadlock by dropping the writer
+            let stdin = deno_task_shell::ShellPipeReader::stdin();
             return Ok(Some((deno_script, stdin)));
         };
 
+        let export = get_export_specific_task_env(self.task.as_ref());
+        let interpreter = (!export.is_empty())
+            .then(|| format!("{export}\n{interpreter}"))
+            .unwrap_or_else(|| interpreter.to_string());
         let Some(full_script) = self.as_script()? else {
             // No script to execute
             return Ok(None);
         };
-        let interpreter_script = deno_task_shell::parser::parse(interpreter).map_err(|e| {
-            FailedToParseShellScript::ParseError {
+        let interpreter_script = deno_task_shell::parser::parse(interpreter.trim())
+            .map_err(|e| FailedToParseShellScript::ParseError {
                 source: e,
                 task: interpreter.to_string(),
-            }
-        })?;
+            })
+            .expect("Failed to parse interpreter script");
         let (stdin, mut stdin_writer) = pipe();
         stdin_writer
             .write_all(full_script.as_bytes())
@@ -285,9 +280,8 @@ impl<'p> ExecutableTask<'p> {
     pub async fn execute_with_pipes(
         &self,
         command_env: &HashMap<OsString, OsString>,
-        input: Option<&[u8]>,
     ) -> Result<RunOutput, TaskExecutionError> {
-        let Some((script, stdin)) = self.prepare_execution(input)? else {
+        let Some((script, stdin)) = self.prepare_execution()? else {
             // No script to execute, return empty output
             return Ok(RunOutput {
                 exit_code: 0,
@@ -552,7 +546,7 @@ mod tests {
         };
 
         let script = executable_task.as_script().unwrap().unwrap();
-        assert_eq!(script, "export \"FOO=bar\";\n\ntest ");
+        assert_eq!(script, "test ");
     }
 
     #[tokio::test]
