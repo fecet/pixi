@@ -344,7 +344,13 @@ impl TaskAddBuilder {
 
     /// With this custom interpreter
     pub fn with_interpreter(mut self, interpreter: impl ToString) -> Self {
-        self.args.interpreter = Some(interpreter.to_string());
+        let interpreter_str = interpreter.to_string();
+        // Split by whitespace to handle cases like "python -" -> ["python", "-"]
+        let interpreter_parts: Vec<String> = interpreter_str
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect();
+        self.args.interpreter = Some(interpreter_parts);
         self
     }
 

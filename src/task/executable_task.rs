@@ -454,11 +454,6 @@ impl<'p> ExecutableTask<'p> {
     pub(crate) fn prepare_execution(
         &self,
     ) -> Result<Option<PreparedExecution>, FailedToParseShellScript> {
-        // Only handle non-interpreter case - interpreter tasks are handled by execute_with_interpreter
-        if self.task().interpreter().is_some() {
-            return Ok(None);
-        }
-
         let Some(deno_script) = self.as_deno_script()? else {
             // No script to execute
             return Ok(None);
@@ -477,6 +472,13 @@ impl<'p> ExecutableTask<'p> {
         &self,
         command_env: &HashMap<OsString, OsString>,
     ) -> Result<RunOutput, TaskExecutionError> {
+        // If interpreter is specified, use std::process::Command directly
+        if let Some(interpreter) = self.task().interpreter() {
+            return self
+                .execute_with_interpreter(command_env, interpreter)
+                .await;
+        }
+
         let Some(prepared) = self.prepare_execution()? else {
             // No script to execute, return empty output
             return Ok(RunOutput {
