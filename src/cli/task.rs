@@ -108,7 +108,7 @@ pub struct AddArgs {
 
     /// The interpreter to use for executing the command (e.g., "bash", "sh", "nu")
     #[arg(long)]
-    pub interpreter: Option<String>,
+    pub interpreter: Option<Vec<String>>,
 }
 
 /// Parse a single key-value pair
@@ -578,7 +578,7 @@ pub struct TaskInfo {
     clean_env: bool,
     inputs: Option<Vec<String>>,
     outputs: Option<Vec<String>>,
-    interpreter: Option<String>,
+    interpreter: Option<Vec<String>>,
 }
 
 impl From<&Task> for TaskInfo {
@@ -606,7 +606,7 @@ impl From<&Task> for TaskInfo {
                     .map(|output| output.source().to_string())
                     .collect()
             }),
-            interpreter: task.interpreter().map(|i| i.to_string()),
+            interpreter: task.interpreter().map(|i| i.to_vec()),
         }
     }
 }

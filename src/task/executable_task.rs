@@ -3,8 +3,8 @@ use std::{
     collections::HashMap,
     ffi::OsString,
     fmt::{Display, Formatter},
-    io::Write,
     path::PathBuf,
+    process::Stdio,
 };
 
 use deno_task_shell::{
@@ -26,7 +26,7 @@ use pixi_manifest::{Task, TaskName, task::ArgValues, task::TemplateStringError};
 use pixi_progress::await_in_progress;
 use rattler_lock::LockFile;
 use thiserror::Error;
-use tokio::task::JoinHandle;
+use tokio::{io::AsyncWriteExt, task::JoinHandle};
 
 use super::task_hash::{InputHashesError, NameHash, TaskCache, TaskHash};
 use crate::{
@@ -43,6 +43,69 @@ pub struct RunOutput {
     pub exit_code: i32,
     pub stdout: String,
     pub stderr: String,
+}
+
+impl ExecutableTask<'_> {
+    /// Execute task with interpreter using std::process::Command
+    pub async fn execute_with_interpreter(
+        &self,
+        command_env: &HashMap<OsString, OsString>,
+        interpreter: &[String],
+    ) -> Result<RunOutput, TaskExecutionError> {
+        if interpreter.is_empty() {
+            return Ok(RunOutput {
+                exit_code: 0,
+                stdout: String::new(),
+                stderr: String::new(),
+            });
+        }
+
+        let Some(script) = self.as_script()? else {
+            return Ok(RunOutput {
+                exit_code: 0,
+                stdout: String::new(),
+                stderr: String::new(),
+            });
+        };
+
+        // Merge task-specific environment variables with command environment
+        let mut merged_env = command_env.clone();
+        if let Some(task_envs) = self.task().env() {
+            for (key, value) in task_envs {
+                merged_env.insert(OsString::from(key), OsString::from(value));
+            }
+        }
+
+        let cwd = self.working_directory()?;
+
+        // Use first element as command, rest as arguments
+        let mut cmd = tokio::process::Command::new(&interpreter[0]);
+        if interpreter.len() > 1 {
+            cmd.args(&interpreter[1..]);
+        }
+
+        cmd.current_dir(cwd)
+            .envs(merged_env)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        let mut child = cmd.spawn()?;
+
+        // Write script to stdin
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(script.as_bytes()).await?;
+            stdin.shutdown().await?;
+        }
+
+        let output = child.wait_with_output().await?;
+
+        Ok(RunOutput {
+            exit_code: output.status.code().unwrap_or(-1),
+            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+        })
+    }
 }
 
 #[derive(Debug, Error, Diagnostic)]
@@ -68,11 +131,17 @@ pub struct InvalidWorkingDirectory {
 
 #[derive(Debug, Error, Diagnostic)]
 pub enum TaskExecutionError {
+    #[error("the script exited with a non-zero exit code {0}")]
+    NonZeroExitCode(i32),
+
     #[error(transparent)]
     InvalidWorkingDirectory(#[from] InvalidWorkingDirectory),
 
     #[error(transparent)]
     FailedToParseShellScript(#[from] FailedToParseShellScript),
+
+    #[error("failed to execute interpreter command")]
+    InterpreterExecution(#[from] std::io::Error),
 }
 
 #[derive(Debug, Error, Diagnostic)]
@@ -247,65 +316,21 @@ impl<'p> ExecutableTask<'p> {
     pub(crate) fn prepare_execution(
         &self,
     ) -> Result<Option<PreparedExecution>, FailedToParseShellScript> {
-        let Some(interpreter) = self.task().interpreter() else {
-            let Some(deno_script) = self.as_deno_script()? else {
-                // No script to execute
-                return Ok(None);
-            };
+        // Only handle non-interpreter case - interpreter tasks are handled by execute_with_interpreter
+        if self.task().interpreter().is_some() {
+            return Ok(None);
+        }
 
-            let stdin = deno_task_shell::ShellPipeReader::stdin();
-            return Ok(Some(PreparedExecution {
-                script: deno_script,
-                stdin,
-                _temp_file: None,
-            }));
-        };
-
-        let export = get_export_specific_task_env(self.task.as_ref());
-        let Some(full_script) = self.as_script()? else {
+        let Some(deno_script) = self.as_deno_script()? else {
             // No script to execute
             return Ok(None);
         };
 
-        // Create a temporary file to store the script
-        let mut temp_file =
-            tempfile::NamedTempFile::new().expect("Failed to create temporary file");
-        temp_file
-            .write_all(full_script.as_bytes())
-            .expect("Failed to write script to temporary file");
-        temp_file.flush().expect("Failed to flush temporary file");
-
-        // Get the temporary file path
-        let temp_path = temp_file.path().to_string_lossy().to_string();
-
-        // Modify the interpreter command to include the temporary file path
-        // Support GitHub-style template string {0} placeholder
-        let interpreter_with_file = if interpreter.contains("{0}") {
-            // Replace {0} placeholder with the temporary file path
-            interpreter.replace("{0}", &temp_path)
-        } else {
-            // Default behavior: append the temporary file path at the end
-            format!("{interpreter} {temp_path}")
-        };
-        let interpreter = if export.is_empty() {
-            interpreter_with_file
-        } else {
-            format!("{export}\n{interpreter_with_file}")
-        };
-
-        let interpreter_script = deno_task_shell::parser::parse(interpreter.trim())
-            .map_err(|e| FailedToParseShellScript::ParseError {
-                source: e,
-                task: interpreter.to_string(),
-            })
-            .expect("Failed to parse interpreter script");
-
         let stdin = deno_task_shell::ShellPipeReader::stdin();
-
         Ok(Some(PreparedExecution {
-            script: interpreter_script,
+            script: deno_script,
             stdin,
-            _temp_file: Some(temp_file), // Keep temp file alive during execution
+            _temp_file: None,
         }))
     }
 

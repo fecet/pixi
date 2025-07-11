@@ -275,7 +275,7 @@ impl Task {
     }
 
     /// Returns the interpreter for the task.
-    pub fn interpreter(&self) -> Option<&str> {
+    pub fn interpreter(&self) -> Option<&[String]> {
         match self {
             Task::Execute(exe) => exe.interpreter.as_deref(),
             _ => None,
@@ -347,8 +347,66 @@ pub struct Execute {
     /// The arguments to pass to the task
     pub args: Option<Vec<TaskArg>>,
 
-    /// The interpreter to use for executing the command (e.g., "bash", "sh", "nu")
-    pub interpreter: Option<String>,
+    /// The interpreter to use for executing the command with enhanced placeholder support.
+    ///
+    /// This field supports four execution modes:
+    ///
+    /// 1. **Traditional stdin mode** (backward compatible):
+    ///    ```toml
+    ///    interpreter = ["python"]
+    ///    ```
+    ///    Script content is piped to interpreter's stdin.
+    ///
+    /// 2. **Explicit stdin mode** (using `<` placeholder) - **DISCOURAGED**:
+    ///    ```toml
+    ///    interpreter = ["python", "<"]
+    ///    interpreter = ["bash", "-e", "<"]
+    ///    ```
+    ///    Script content is explicitly piped to stdin. The `<` placeholder is removed
+    ///    from arguments. Can only appear once. **Warning: This approach is discouraged
+    ///    as it provides no benefit over the traditional stdin mode.**
+    ///
+    /// 3. **Temporary file mode** (using `-` placeholder):
+    ///    ```toml
+    ///    interpreter = ["python", "-"]
+    ///    interpreter = ["nu", "--log-level", "warn", "-"]
+    ///    ```
+    ///    Script content is written to a temporary file with appropriate extension,
+    ///    and all `-` placeholders are replaced with the file path.
+    ///
+    /// 4. **Inline script mode** (using `@` placeholder):
+    ///    ```toml
+    ///    interpreter = ["python", "-c", "@"]
+    ///    interpreter = ["bash", "-c", "@"]
+    ///    ```
+    ///    All `@` placeholders are replaced with the script content directly.
+    ///
+    /// **Multiple placeholders are supported:**
+    /// ```toml
+    /// # Same temp file used for all `-` placeholders
+    /// interpreter = ["python", "-", "--debug", "-"]
+    ///
+    /// # Mixed placeholders (but not with `<`)
+    /// interpreter = ["python", "-c", "@", "--verbose"]
+    /// ```
+    ///
+    /// **Nushell best practices:**
+    /// ```toml
+    /// # Single-line commands - use inline approach
+    /// interpreter = ["nu", "-c", "@"]
+    /// interpreter = ["nu", "--log-level", "warn", "-c", "@"]
+    ///
+    /// # Multi-line scripts - use temporary file approach
+    /// interpreter = ["nu", "-"]
+    /// interpreter = ["nu", "--log-level", "warn", "-"]
+    /// ```
+    ///
+    /// The temporary file approach is recommended for interpreters that don't
+    /// reliably handle stdin input (like nushell), while the inline approach
+    /// is useful for interpreters that accept script content as arguments.
+    /// The explicit stdin approach (`<`) is discouraged as it provides no
+    /// benefit over the traditional stdin mode.
+    pub interpreter: Option<Vec<String>>,
 }
 
 impl From<Execute> for Task {
@@ -755,7 +813,13 @@ impl From<Task> for Item {
                     table.insert("description", description.into());
                 }
                 if let Some(interpreter) = &process.interpreter {
-                    table.insert("interpreter", interpreter.into());
+                    let mut interpreter_array = Array::new();
+                    for item in interpreter {
+                        interpreter_array.push(Value::String(toml_edit::Formatted::new(
+                            item.as_str().to_string(),
+                        )));
+                    }
+                    table.insert("interpreter", Value::Array(interpreter_array));
                 }
                 Item::Value(Value::InlineTable(table))
             }

@@ -13,6 +13,26 @@ use crate::{
     warning::Deprecation,
 };
 
+/// Helper function to deserialize interpreter field that can be either a string or array
+fn deserialize_interpreter(th: &mut TableHelper) -> Result<Option<Vec<String>>, DeserError> {
+    let interpreter = th.take("interpreter");
+    if let Some((_, mut value)) = interpreter {
+        match value.take() {
+            ValueInner::String(str) => Ok(Some(vec![str.into_owned()])),
+            ValueInner::Array(array) => {
+                let mut interpreters = Vec::with_capacity(array.len());
+                for mut item in array {
+                    interpreters.push(item.take_string(None)?.into_owned());
+                }
+                Ok(Some(interpreters))
+            }
+            inner => Err(expected("string or array of strings", inner, value.span).into()),
+        }
+    } else {
+        Ok(None)
+    }
+}
+
 impl<'de> toml_span::Deserialize<'de> for TemplateString {
     fn deserialize(value: &mut Value<'de>) -> Result<Self, DeserError> {
         Ok(TemplateString::new(value.take_string(None)?.into_owned()))
@@ -192,7 +212,7 @@ impl<'de> toml_span::Deserialize<'de> for TomlTask {
             let description = th.optional("description");
             let clean_env = th.optional("clean-env").unwrap_or(false);
             let args = th.optional::<Vec<TaskArg>>("args");
-            let interpreter = th.optional::<String>("interpreter");
+            let interpreter = deserialize_interpreter(&mut th)?;
 
             let mut have_default = false;
             for arg in args.iter().flat_map(|a| a.iter()) {

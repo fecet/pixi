@@ -374,6 +374,9 @@ enum TaskExecutionError {
 
     #[error(transparent)]
     UnsupportedPlatformError(#[from] UnsupportedPlatformError),
+
+    #[error("failed to execute interpreter command")]
+    InterpreterExecution(#[from] std::io::Error),
 }
 
 /// Called to execute a single command.
@@ -383,6 +386,39 @@ async fn execute_task(
     task: &ExecutableTask<'_>,
     command_env: &HashMap<OsString, OsString>,
 ) -> Result<(), TaskExecutionError> {
+    // If interpreter is specified, use std::process::Command directly
+    if let Some(interpreter) = task.task().interpreter() {
+        let output = task
+            .execute_with_interpreter(command_env, interpreter)
+            .await
+            .map_err(|e| match e {
+                crate::task::TaskExecutionError::InvalidWorkingDirectory(err) => {
+                    TaskExecutionError::InvalidWorkingDirectory(err)
+                }
+                crate::task::TaskExecutionError::FailedToParseShellScript(err) => {
+                    TaskExecutionError::FailedToParseShellScript(err)
+                }
+                crate::task::TaskExecutionError::InterpreterExecution(err) => {
+                    TaskExecutionError::InterpreterExecution(err)
+                }
+                crate::task::TaskExecutionError::NonZeroExitCode(code) => {
+                    TaskExecutionError::NonZeroExitCode(code)
+                }
+            })?;
+        if output.exit_code != 0 {
+            return Err(TaskExecutionError::NonZeroExitCode(output.exit_code));
+        }
+        // Print stdout and stderr to console
+        if !output.stdout.is_empty() {
+            print!("{}", output.stdout);
+        }
+        if !output.stderr.is_empty() {
+            eprint!("{}", output.stderr);
+        }
+        return Ok(());
+    }
+
+    // Otherwise use deno_task_shell
     let Some(prepared) = task.prepare_execution()? else {
         // No script to execute, task is complete
         return Ok(());
