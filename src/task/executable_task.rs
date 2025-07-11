@@ -11,7 +11,7 @@ use deno_task_shell::{
     ShellPipeWriter, ShellState, execute_with_pipes, parser::SequentialList, pipe,
 };
 use fs_err::tokio as tokio_fs;
-use tempfile::NamedTempFile;
+use tempfile::{Builder, NamedTempFile};
 
 /// Contains the prepared execution data for a task with interpreter
 pub(crate) struct PreparedExecution {
@@ -78,14 +78,138 @@ impl ExecutableTask<'_> {
 
         let cwd = self.working_directory()?;
 
-        // Use first element as command, rest as arguments
-        let mut cmd = tokio::process::Command::new(&interpreter[0]);
-        if interpreter.len() > 1 {
-            cmd.args(&interpreter[1..]);
+        // Check which execution approach to use based on placeholders
+        let has_tempfile_placeholder = interpreter.iter().any(|arg| arg == "-");
+        let has_inline_script_placeholder = interpreter.iter().any(|arg| arg == "@");
+        let has_stdin_placeholder = interpreter.iter().any(|arg| arg == "<");
+
+        // Validate that '<' placeholder appears only once and warn about its usage
+        if has_stdin_placeholder {
+            let stdin_count = interpreter.iter().filter(|arg| *arg == "<").count();
+            if stdin_count > 1 {
+                return Err(TaskExecutionError::InterpreterExecution(
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "The '<' placeholder for stdin can only appear once in interpreter arguments",
+                    ),
+                ));
+            }
+
+            // Warn about using '<' placeholder
+            eprintln!("⚠️  Warning: The '<' placeholder for explicit stdin is discouraged.");
+            eprintln!(
+                "   Consider using: interpreter = {:?}",
+                interpreter
+                    .iter()
+                    .filter(|arg| *arg != "<")
+                    .collect::<Vec<_>>()
+            );
+        }
+
+        if has_tempfile_placeholder || has_inline_script_placeholder {
+            // Use enhanced interpreter approach (handles "-" and "@" placeholders)
+            self.execute_with_enhanced_interpreter(interpreter, &script, cwd, merged_env)
+                .await
+        } else {
+            // Use stdin approach (both traditional and explicit with '<' placeholder)
+            self.execute_with_stdin(interpreter, &script, cwd, merged_env)
+                .await
+        }
+    }
+
+    /// Execute interpreter using enhanced approach with support for "-" and "@" placeholders
+    async fn execute_with_enhanced_interpreter(
+        &self,
+        interpreter: &[String],
+        script: &str,
+        cwd: PathBuf,
+        env: HashMap<OsString, OsString>,
+    ) -> Result<RunOutput, TaskExecutionError> {
+        let has_tempfile_placeholder = interpreter.iter().any(|arg| arg == "-");
+
+        // Create temporary file only if we have "-" placeholders
+        let temp_file = if has_tempfile_placeholder {
+            // Create temporary file with appropriate extension
+            let extension = Self::get_script_extension(&interpreter[0]);
+            let temp_file = Builder::new()
+                .suffix(&extension)
+                .tempfile()
+                .map_err(TaskExecutionError::InterpreterExecution)?;
+
+            // Write script to temp file
+            std::fs::write(temp_file.path(), script)
+                .map_err(TaskExecutionError::InterpreterExecution)?;
+
+            Some(temp_file)
+        } else {
+            None
+        };
+
+        // Process arguments, replacing placeholders
+        let mut processed_args = Vec::new();
+        for arg in interpreter {
+            match arg.as_str() {
+                "-" => {
+                    // Replace with temp file path
+                    if let Some(ref temp_file) = temp_file {
+                        processed_args.push(temp_file.path().to_string_lossy().to_string());
+                    } else {
+                        processed_args.push(arg.clone());
+                    }
+                }
+                "@" => {
+                    // Replace with script content
+                    processed_args.push(script.to_string());
+                }
+                _ => {
+                    processed_args.push(arg.clone());
+                }
+            }
+        }
+
+        // Execute command
+        let mut cmd = tokio::process::Command::new(&processed_args[0]);
+        if processed_args.len() > 1 {
+            cmd.args(&processed_args[1..]);
         }
 
         cmd.current_dir(cwd)
-            .envs(merged_env)
+            .envs(env)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        let output = cmd.output().await?;
+
+        Ok(RunOutput {
+            exit_code: output.status.code().unwrap_or(-1),
+            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+        })
+    }
+
+    /// Execute interpreter using stdin approach (traditional and explicit with '<' placeholder)
+    async fn execute_with_stdin(
+        &self,
+        interpreter: &[String],
+        script: &str,
+        cwd: PathBuf,
+        env: HashMap<OsString, OsString>,
+    ) -> Result<RunOutput, TaskExecutionError> {
+        // Filter out '<' placeholder if present
+        let filtered_args: Vec<String> = interpreter
+            .iter()
+            .filter(|arg| *arg != "<")
+            .cloned()
+            .collect();
+
+        // Use first element as command, rest as arguments
+        let mut cmd = tokio::process::Command::new(&filtered_args[0]);
+        if filtered_args.len() > 1 {
+            cmd.args(&filtered_args[1..]);
+        }
+
+        cmd.current_dir(cwd)
+            .envs(env)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -105,6 +229,20 @@ impl ExecutableTask<'_> {
             stdout: String::from_utf8_lossy(&output.stdout).to_string(),
             stderr: String::from_utf8_lossy(&output.stderr).to_string(),
         })
+    }
+
+    /// Get appropriate file extension for script based on interpreter
+    fn get_script_extension(interpreter: &str) -> String {
+        match interpreter.to_lowercase().as_str() {
+            "python" | "python3" | "py" => ".py".to_string(),
+            "nu" | "nushell" => ".nu".to_string(),
+            "bash" => ".sh".to_string(),
+            "sh" => ".sh".to_string(),
+            "zsh" => ".zsh".to_string(),
+            "fish" => ".fish".to_string(),
+            "powershell" | "pwsh" => ".ps1".to_string(),
+            _ => ".script".to_string(),
+        }
     }
 }
 

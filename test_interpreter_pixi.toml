@@ -1,0 +1,9 @@
+[project]
+name = "interpreter-test"
+version = "0.1.0"
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[tasks]
+hello = { cmd = "echo \"Hello from bash\"", interpreter = ["bash"] }
+python-test = { cmd = "print(\"Hello from Python\")", interpreter = ["python"] }

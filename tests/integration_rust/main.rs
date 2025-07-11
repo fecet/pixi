@@ -2,6 +2,7 @@ mod add_tests;
 mod common;
 mod init_tests;
 mod install_tests;
+mod interpreter_tempfile_tests;
 mod project_tests;
 mod pypi_tests;
 mod search_tests;

@@ -1,0 +1,365 @@
+#:schema ./../../schema.json
+
+[project]
+channels = ["conda-forge"]
+description = "Examples demonstrating nushell (nu) interpreter usage in pixi tasks"
+name = "nushell-examples"
+platforms = ["linux-64", "win-64", "osx-64", "osx-arm64"]
+version = "0.1.0"
+
+[dependencies]
+nushell = ">=0.95"
+
+# Basic nushell interpreter examples
+[tasks.basic_echo_demo]
+cmd = "echo 'Nushell echo command'"
+interpreter = ["nu", "-c"]
+
+[tasks.basic_print_demo]
+cmd = "print 'Hello from Nushell!'"
+interpreter = ["nu", "-c"]
+
+# Nushell-specific data manipulation
+[tasks.list_processing_demo]
+cmd = """
+let numbers = [1, 2, 3, 4, 5]
+$numbers | each { |n| $n * 2 } | print
+"""
+interpreter = ["nu", "-c"]
+
+[tasks.table_demo]
+cmd = """
+[[name, age, city];
+ [Alice, 30, "New York"],
+ [Bob, 25, "London"],
+ [Charlie, 35, "Tokyo"]]
+| where age > 27
+| select name city
+| print
+"""
+interpreter = ["nu", "-c"]
+
+# File operations with nushell
+[tasks.file_operations_demo]
+cmd = """
+ls | where type == file | get name | length | print
+"""
+interpreter = ["nu", "-c"]
+
+[tasks.json_processing_demo]
+cmd = """
+echo '{"users": [{"name": "Alice", "score": 95}, {"name": "Bob", "score": 87}]}'
+| from json
+| get users
+| where score > 90
+| get name
+| print
+"""
+interpreter = ["nu", "-c"]
+
+# Environment variables and system info
+[tasks.env_demo]
+cmd = """
+$env.PATH | split row (char esep) | length | $"PATH has ($in) entries"
+"""
+interpreter = ["nu", "-c"]
+
+[tasks.system_info_demo]
+cmd = """
+sys | get host | print
+"""
+interpreter = ["nu", "-c"]
+
+# String manipulation
+[tasks.string_ops_demo]
+cmd = """
+let text = "Hello, Nushell World!"
+$text | str replace "World" "Universe" | str upcase | print
+"""
+interpreter = ["nu", "-c"]
+
+# Mathematical operations
+[tasks.math_demo]
+cmd = """
+let data = [10, 20, 30, 40, 50]
+let sum = ($data | math sum)
+let avg = ($data | math avg)
+print $"Sum: ($sum), Average: ($avg)"
+"""
+interpreter = ["nu", "-c"]
+
+# Conditional logic
+[tasks.conditional_demo]
+cmd = """
+let score = 85
+let grade = if $score >= 90 {
+    "A"
+} else if $score >= 80 {
+    "B"
+} else if $score >= 70 {
+    "C"
+} else {
+    "F"
+}
+print $"Score: ($score), Grade: ($grade)"
+"""
+interpreter = ["nu", "-c"]
+
+# Loop examples
+[tasks.loop_demo]
+cmd = """
+1..5 | each { |i|
+    print $"Processing item ($i)"
+    $i * $i
+} | print
+"""
+interpreter = ["nu", "-c"]
+
+# Date and time operations
+[tasks.date_demo]
+cmd = """
+let now = (date now)
+let formatted = ($now | format date "%Y-%m-%d %H:%M:%S")
+print $"Current time: ($formatted)"
+"""
+interpreter = ["nu", "-c"]
+
+# HTTP operations (if available)
+[tasks.http_demo]
+cmd = """
+# Example HTTP request (commented out as it requires internet)
+# http get https://api.github.com/repos/nushell/nushell | get name | print
+print "HTTP operations available via 'http get', 'http post', etc."
+"""
+interpreter = ["nu", "-c"]
+
+# Working with CSV data
+[tasks.csv_demo]
+cmd = """
+echo "name,age,city
+Alice,30,New York
+Bob,25,London
+Charlie,35,Tokyo"
+| from csv
+| where age > 27
+| to json
+| print
+"""
+interpreter = ["nu", "-c"]
+
+# Custom functions
+[tasks.function_demo]
+cmd = """
+def greet [name: string] {
+    $"Hello, ($name)! Welcome to Nushell."
+}
+
+["Alice", "Bob", "Charlie"] | each { |name| greet $name } | print
+"""
+interpreter = ["nu", "-c"]
+
+# Error handling
+[tasks.error_demo]
+cmd = """
+try {
+    let result = (10 / 2)
+    print $"Division result: ($result)"
+} catch {
+    print "An error occurred during division"
+}
+"""
+interpreter = ["nu", "-c"]
+
+# Pipeline chaining
+[tasks.pipeline_demo]
+cmd = """
+1..10
+| where ($it mod 2) == 0
+| each { |n| $n * 3 }
+| math sum
+| $"Sum of processed even numbers: ($in)"
+"""
+interpreter = ["nu", "-c"]
+
+# Working with structured data
+[tasks.structured_data_demo]
+cmd = """
+let config = {
+    app: "my-app",
+    version: "1.0.0",
+    settings: {
+        debug: true,
+        port: 8080
+    }
+}
+
+print $"App: ($config.app) v($config.version)"
+print $"Debug mode: ($config.settings.debug)"
+print $"Port: ($config.settings.port)"
+"""
+interpreter = ["nu", "-c"]
+
+# Multi-line complex script with nushell flags
+[tasks.complex_script_demo]
+cmd = """
+# Complex data processing pipeline
+let data = [
+    {name: "file1.txt", size: 1024, type: "text"},
+    {name: "image.png", size: 2048, type: "image"},
+    {name: "doc.pdf", size: 4096, type: "document"},
+    {name: "script.nu", size: 512, type: "script"}
+]
+
+$data
+| group-by type
+| transpose key value
+| each { |group|
+    let total_size = ($group.value | get size | math sum)
+    {
+        type: $group.key,
+        count: ($group.value | length),
+        total_size: $total_size,
+        avg_size: ($total_size / ($group.value | length))
+    }
+}
+| sort-by total_size --reverse
+| print
+"""
+interpreter = ["nu", "--no-config-file"]
+
+# Working with different data formats
+[tasks.data_formats_demo]
+cmd = """
+# JSON
+let json_data = '{"name": "John", "age": 30}' | from json
+print $"Name from JSON: ($json_data.name)"
+
+# TOML
+let toml_data = 'name = "Bob"\nage = 35' | from toml
+print $"Name from TOML: ($toml_data.name)"
+"""
+interpreter = ["nu", "-c"]
+
+# Network and file system utilities
+[tasks.utilities_demo]
+cmd = """
+# File system operations
+print "=== File System ==="
+pwd | print
+ls | length | $"Files in current directory: ($in)"
+
+# Date and time utilities
+print "\n=== Date/Time ==="
+date now | print
+date now | format date "%A, %B %d, %Y" | print
+"""
+interpreter = ["nu", "-c"]
+
+# Advanced nushell features
+[tasks.advanced_features_demo]
+cmd = """
+# Custom command with signature
+def process-numbers [...numbers: int] {
+    $numbers | each { |n|
+        if ($n mod 2) == 0 {
+            {number: $n, type: "even", square: ($n * $n)}
+        } else {
+            {number: $n, type: "odd", cube: ($n * $n * $n)}
+        }
+    }
+}
+
+# Use the custom command
+process-numbers 1 2 3 4 5 6 | print
+
+# Working with ranges and sequences
+print "\n=== Ranges ==="
+1..=5 | each { |n| $"Number: ($n)" } | print
+
+# String interpolation and formatting
+print "\n=== String Formatting ==="
+let name = "Nushell"
+let version = "0.95"
+print $"Welcome to ($name) version ($version)!"
+"""
+interpreter = ["nu", "-c"]
+
+# Nushell configuration examples
+[tasks.config_demo]
+cmd = """
+# Display current nushell configuration
+print "Nushell version and config info:"
+version | print
+
+# Environment variables
+print "\nEnvironment variables (first 5):"
+$env | transpose key value | first 5 | print
+
+# Command history (if available)
+print "\nCommand capabilities:"
+help commands | where category == "core" | first 10 | get name | print
+"""
+interpreter = ["nu", "--no-config-file"]
+
+# Task dependencies with nushell
+[tasks.setup_data_demo]
+cmd = """
+mkdir temp_data
+echo "id,value
+1,100
+2,200
+3,300" | save temp_data/data.csv
+print "Data setup complete"
+"""
+interpreter = ["nu", "-c"]
+
+[tasks.process_data_demo]
+cmd = """
+open temp_data/data.csv
+| where value > 150
+| get id
+| each { |id| $"ID: ($id)" }
+| str join ", "
+| print
+"""
+depends-on = ["setup_data_demo"]
+interpreter = ["nu", "-c"]
+
+[tasks.cleanup_demo]
+cmd = """
+rm -rf temp_data
+print "Cleanup complete"
+"""
+depends-on = ["process_data_demo"]
+interpreter = ["nu", "-c"]
+
+# Parameterized task with nushell
+[tasks.parameterized_task_demo]
+args = [
+    { arg = "message", default = "Hello from parameterized Nushell task" },
+    { arg = "count", default = "3" },
+]
+cmd = """
+let message = "{{ message }}"
+let count = {{ count }}
+1..$count | each { |i| $"($i): ($message)" } | print
+"""
+interpreter = ["nu", "-c"]
+
+# Task with working directory
+[tasks.working_dir_task_demo]
+cmd = """
+print $"Current working directory: (pwd)"
+ls | get name | print
+"""
+cwd = "."
+interpreter = ["nu", "-c"]
+
+# Task with environment variables
+[tasks.env_task_demo]
+cmd = """
+print $"Custom variable: ($env.CUSTOM_VAR)"
+print $"Task running in: ($env.PWD)"
+"""
+env = { CUSTOM_VAR = "nushell-task" }
+interpreter = ["nu", "-c"]
