@@ -274,11 +274,27 @@ impl Task {
         }
     }
 
-    /// Returns the interpreter for the task.
-    pub fn interpreter(&self) -> Option<&[String]> {
+    /// Returns the interpreter for the task as an array format.
+    /// For string format interpreters, returns a single-element array.
+    pub fn interpreter(&self) -> Option<Vec<String>> {
         match self {
-            Task::Execute(exe) => exe.interpreter.as_deref(),
-            _ => None,
+            Task::Execute(exe) => exe.interpreter.as_ref().map(|fmt| match fmt {
+                InterpreterFormat::String(s) => vec![s.clone()],
+                InterpreterFormat::Array(arr) => arr.clone(),
+            }),
+            Task::Alias(_) => None,
+            Task::Plain(_) => None,
+            Task::Custom(_) => None,
+        }
+    }
+
+    /// Returns the raw interpreter format for the task.
+    pub fn interpreter_format(&self) -> Option<&InterpreterFormat> {
+        match self {
+            Task::Execute(exe) => exe.interpreter.as_ref(),
+            Task::Alias(_) => None,
+            Task::Plain(_) => None,
+            Task::Custom(_) => None,
         }
     }
 }
@@ -310,6 +326,15 @@ impl Deref for GlobPatterns {
     fn deref(&self) -> &Self::Target {
         &self.0
     }
+}
+
+/// Represents the format of an interpreter specification
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+pub enum InterpreterFormat {
+    /// String format: "python {0}" or "python" (appends file path if no {0})
+    String(String),
+    /// Array format: ["python", "-"] or ["python", "-c", "@"]
+    Array(Vec<String>),
 }
 
 /// A command script executes a single command from the environment
@@ -349,7 +374,18 @@ pub struct Execute {
 
     /// The interpreter to use for executing the command with enhanced placeholder support.
     ///
-    /// This field supports four execution modes:
+    /// This field supports multiple execution modes depending on the format:
+    ///
+    /// ## String Format (uses `{0}` placeholder):
+    /// ```toml
+    /// interpreter = "python {0}"
+    /// interpreter = "nu --log-level warn {0}"
+    /// ```
+    /// Script content is written to a temporary file with appropriate extension,
+    /// and `{0}` placeholder is replaced with the file path. If no `{0}` is present,
+    /// the file path is appended at the end.
+    ///
+    /// ## Array Format (uses `-`, `@`, `<` placeholders):
     ///
     /// 1. **Traditional stdin mode** (backward compatible):
     ///    ```toml
@@ -399,6 +435,9 @@ pub struct Execute {
     /// # Multi-line scripts - use temporary file approach
     /// interpreter = ["nu", "-"]
     /// interpreter = ["nu", "--log-level", "warn", "-"]
+    ///
+    /// # Or using string format
+    /// interpreter = "nu {0}"
     /// ```
     ///
     /// The temporary file approach is recommended for interpreters that don't
@@ -406,7 +445,7 @@ pub struct Execute {
     /// is useful for interpreters that accept script content as arguments.
     /// The explicit stdin approach (`<`) is discouraged as it provides no
     /// benefit over the traditional stdin mode.
-    pub interpreter: Option<Vec<String>>,
+    pub interpreter: Option<InterpreterFormat>,
 }
 
 impl From<Execute> for Task {
@@ -422,7 +461,7 @@ impl FromStr for ArgName {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.contains('-') {
+        if s.contains(&['-'][..]) {
             Err(format!(
                 "'{s}' is not a valid argument name since it contains the character '-'"
             ))
@@ -729,7 +768,7 @@ impl Display for Task {
 pub fn quote(in_str: &str) -> Cow<str> {
     if in_str.is_empty() {
         "\"\"".into()
-    } else if in_str.contains(['\t', '\r', '\n', ' ', '[', ']']) {
+    } else if in_str.contains(&['\t', '\r', '\n', ' ', '[', ']'][..]) {
         let mut out: String = String::with_capacity(in_str.len() + 2);
         out.push('"');
         for c in in_str.chars() {
@@ -813,13 +852,22 @@ impl From<Task> for Item {
                     table.insert("description", description.into());
                 }
                 if let Some(interpreter) = &process.interpreter {
-                    let mut interpreter_array = Array::new();
-                    for item in interpreter {
-                        interpreter_array.push(Value::String(toml_edit::Formatted::new(
-                            item.as_str().to_string(),
-                        )));
+                    match interpreter {
+                        InterpreterFormat::String(s) => {
+                            table.insert(
+                                "interpreter",
+                                Value::String(toml_edit::Formatted::new(s.clone())),
+                            );
+                        }
+                        InterpreterFormat::Array(arr) => {
+                            let mut interpreter_array = Array::new();
+                            for item in arr {
+                                interpreter_array
+                                    .push(Value::String(toml_edit::Formatted::new(item.clone())));
+                            }
+                            table.insert("interpreter", Value::Array(interpreter_array));
+                        }
                     }
-                    table.insert("interpreter", Value::Array(interpreter_array));
                 }
                 Item::Value(Value::InlineTable(table))
             }

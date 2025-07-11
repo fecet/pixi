@@ -10,14 +10,27 @@ version = "0.1.0"
 [dependencies]
 nushell = ">=0.95"
 
-# Basic nushell interpreter examples
+# Basic nushell interpreter examples using array format
 [tasks.basic_echo_demo]
 cmd = "echo 'Nushell echo command'"
-interpreter = ["nu", "-c"]
+interpreter = ["nu", "-c", "@"]
 
 [tasks.basic_print_demo]
 cmd = "print 'Hello from Nushell!'"
-interpreter = ["nu", "-c"]
+interpreter = ["nu", "-c", "@"]
+
+# String interpreter format examples with {0} placeholder
+[tasks.string_echo_demo]
+cmd = "echo 'Hello from string format with {0} placeholder!'"
+interpreter = "nu {0}"
+
+[tasks.string_print_demo]
+cmd = "print 'Hello from string format without explicit placeholder!'"
+interpreter = "nu"
+
+[tasks.string_with_flags_demo]
+cmd = "print 'String format with nushell flags!'"
+interpreter = "nu --log-level warn {0}"
 
 # Nushell-specific data manipulation
 [tasks.list_processing_demo]
@@ -25,7 +38,7 @@ cmd = """
 let numbers = [1, 2, 3, 4, 5]
 $numbers | each { |n| $n * 2 } | print
 """
-interpreter = ["nu", "-c"]
+interpreter = ["nu", "-c", "@"]
 
 [tasks.table_demo]
 cmd = """
@@ -37,14 +50,14 @@ cmd = """
 | select name city
 | print
 """
-interpreter = ["nu", "-c"]
+interpreter = ["nu", "-c", "@"]
 
 # File operations with nushell
 [tasks.file_operations_demo]
 cmd = """
 ls | where type == file | get name | length | print
 """
-interpreter = ["nu", "-c"]
+interpreter = ["nu", "-c", "@"]
 
 [tasks.json_processing_demo]
 cmd = """
@@ -55,20 +68,20 @@ echo '{"users": [{"name": "Alice", "score": 95}, {"name": "Bob", "score": 87}]}'
 | get name
 | print
 """
-interpreter = ["nu", "-c"]
+interpreter = ["nu", "-c", "@"]
 
 # Environment variables and system info
 [tasks.env_demo]
 cmd = """
 $env.PATH | split row (char esep) | length | $"PATH has ($in) entries"
 """
-interpreter = ["nu", "-c"]
+interpreter = ["nu", "-c", "@"]
 
 [tasks.system_info_demo]
 cmd = """
 sys | get host | print
 """
-interpreter = ["nu", "-c"]
+interpreter = ["nu", "-c", "@"]
 
 # String manipulation
 [tasks.string_ops_demo]
@@ -76,7 +89,7 @@ cmd = """
 let text = "Hello, Nushell World!"
 $text | str replace "World" "Universe" | str upcase | print
 """
-interpreter = ["nu", "-c"]
+interpreter = ["nu", "-c", "@"]
 
 # Mathematical operations
 [tasks.math_demo]
@@ -86,7 +99,7 @@ let sum = ($data | math sum)
 let avg = ($data | math avg)
 print $"Sum: ($sum), Average: ($avg)"
 """
-interpreter = ["nu", "-c"]
+interpreter = ["nu", "-c", "@"]
 
 # Conditional logic
 [tasks.conditional_demo]
@@ -103,7 +116,8 @@ let grade = if $score >= 90 {
 }
 print $"Score: ($score), Grade: ($grade)"
 """
-interpreter = ["nu", "-c"]
+interpreter = ["nu", "-c", "@"]
+
 
 # Loop examples
 [tasks.loop_demo]
@@ -113,7 +127,7 @@ cmd = """
     $i * $i
 } | print
 """
-interpreter = ["nu", "-c"]
+interpreter = ["nu", "-c", "@"]
 
 # Date and time operations
 [tasks.date_demo]
@@ -122,7 +136,7 @@ let now = (date now)
 let formatted = ($now | format date "%Y-%m-%d %H:%M:%S")
 print $"Current time: ($formatted)"
 """
-interpreter = ["nu", "-c"]
+interpreter = ["nu", "-c", "@"]
 
 # HTTP operations (if available)
 [tasks.http_demo]
@@ -131,7 +145,7 @@ cmd = """
 # http get https://api.github.com/repos/nushell/nushell | get name | print
 print "HTTP operations available via 'http get', 'http post', etc."
 """
-interpreter = ["nu", "-c"]
+interpreter = ["nu", "-c", "@"]
 
 # Working with CSV data
 [tasks.csv_demo]
@@ -145,7 +159,7 @@ Charlie,35,Tokyo"
 | to json
 | print
 """
-interpreter = ["nu", "-c"]
+interpreter = ["nu", "-c", "@"]
 
 # Custom functions
 [tasks.function_demo]
@@ -156,7 +170,7 @@ def greet [name: string] {
 
 ["Alice", "Bob", "Charlie"] | each { |name| greet $name } | print
 """
-interpreter = ["nu", "-c"]
+interpreter = ["nu", "-c", "@"]
 
 # Error handling
 [tasks.error_demo]
@@ -168,7 +182,7 @@ try {
     print "An error occurred during division"
 }
 """
-interpreter = ["nu", "-c"]
+interpreter = ["nu", "-c", "@"]
 
 # Pipeline chaining
 [tasks.pipeline_demo]
@@ -179,7 +193,7 @@ cmd = """
 | math sum
 | $"Sum of processed even numbers: ($in)"
 """
-interpreter = ["nu", "-c"]
+interpreter = ["nu", "-c", "@"]
 
 # Working with structured data
 [tasks.structured_data_demo]
@@ -197,7 +211,7 @@ print $"App: ($config.app) v($config.version)"
 print $"Debug mode: ($config.settings.debug)"
 print $"Port: ($config.settings.port)"
 """
-interpreter = ["nu", "-c"]
+interpreter = ["nu", "-c", "@"]
 
 # Multi-line complex script with nushell flags
 [tasks.complex_script_demo]
@@ -225,7 +239,7 @@ $data
 | sort-by total_size --reverse
 | print
 """
-interpreter = ["nu", "--no-config-file"]
+interpreter = ["nu", "--no-config-file", "-"]
 
 # Working with different data formats
 [tasks.data_formats_demo]
@@ -238,7 +252,7 @@ print $"Name from JSON: ($json_data.name)"
 let toml_data = 'name = "Bob"\nage = 35' | from toml
 print $"Name from TOML: ($toml_data.name)"
 """
-interpreter = ["nu", "-c"]
+interpreter = ["nu", "-c", "@"]
 
 # Network and file system utilities
 [tasks.utilities_demo]
@@ -253,7 +267,7 @@ print "\n=== Date/Time ==="
 date now | print
 date now | format date "%A, %B %d, %Y" | print
 """
-interpreter = ["nu", "-c"]
+interpreter = ["nu", "-c", "@"]
 
 # Advanced nushell features
 [tasks.advanced_features_demo]
@@ -282,7 +296,7 @@ let name = "Nushell"
 let version = "0.95"
 print $"Welcome to ($name) version ($version)!"
 """
-interpreter = ["nu", "-c"]
+interpreter = ["nu", "-c", "@"]
 
 # Nushell configuration examples
 [tasks.config_demo]
@@ -299,7 +313,7 @@ $env | transpose key value | first 5 | print
 print "\nCommand capabilities:"
 help commands | where category == "core" | first 10 | get name | print
 """
-interpreter = ["nu", "--no-config-file"]
+interpreter = ["nu", "--no-config-file", '-']
 
 # Task dependencies with nushell
 [tasks.setup_data_demo]
@@ -311,7 +325,7 @@ echo "id,value
 3,300" | save temp_data/data.csv
 print "Data setup complete"
 """
-interpreter = ["nu", "-c"]
+interpreter = ["nu", "-c", "@"]
 
 [tasks.process_data_demo]
 cmd = """
@@ -323,7 +337,7 @@ open temp_data/data.csv
 | print
 """
 depends-on = ["setup_data_demo"]
-interpreter = ["nu", "-c"]
+interpreter = ["nu", "-c", "@"]
 
 [tasks.cleanup_demo]
 cmd = """
@@ -331,7 +345,7 @@ rm -rf temp_data
 print "Cleanup complete"
 """
 depends-on = ["process_data_demo"]
-interpreter = ["nu", "-c"]
+interpreter = ["nu", "-c", "@"]
 
 # Parameterized task with nushell
 [tasks.parameterized_task_demo]
@@ -344,7 +358,7 @@ let message = "{{ message }}"
 let count = {{ count }}
 1..$count | each { |i| $"($i): ($message)" } | print
 """
-interpreter = ["nu", "-c"]
+interpreter = ["nu", "-c", "@"]
 
 # Task with working directory
 [tasks.working_dir_task_demo]
@@ -353,7 +367,7 @@ print $"Current working directory: (pwd)"
 ls | get name | print
 """
 cwd = "."
-interpreter = ["nu", "-c"]
+interpreter = ["nu", "-c", "@"]
 
 # Task with environment variables
 [tasks.env_task_demo]
@@ -362,4 +376,4 @@ print $"Custom variable: ($env.CUSTOM_VAR)"
 print $"Task running in: ($env.PWD)"
 """
 env = { CUSTOM_VAR = "nushell-task" }
-interpreter = ["nu", "-c"]
+interpreter = ["nu", "-c", "@"]

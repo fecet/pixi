@@ -387,9 +387,9 @@ async fn execute_task(
     command_env: &HashMap<OsString, OsString>,
 ) -> Result<(), TaskExecutionError> {
     // If interpreter is specified, use std::process::Command directly
-    if let Some(interpreter) = task.task().interpreter() {
+    if let Some(interpreter_format) = task.task().interpreter_format() {
         let output = task
-            .execute_with_interpreter(command_env, interpreter)
+            .execute_with_interpreter(command_env, interpreter_format)
             .await
             .map_err(|e| match e {
                 crate::task::TaskExecutionError::InvalidWorkingDirectory(err) => {

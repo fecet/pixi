@@ -272,6 +272,12 @@ build = { cmd="npm build", cwd="frontend", inputs=["frontend/package.json", "fro
 run = { cmd="python run.py $ARGUMENT", env={ ARGUMENT="value" }}
 format = { cmd="black $INIT_CWD" } # runs black where you run pixi run format
 clean-env = { cmd = "python isolated.py", clean-env = true} # Only on Unix!
+
+# Custom interpreter examples
+python-string = { cmd = "print('Hello from Python!')", interpreter = "python {0}" }
+python-array = { cmd = "print('Hello from Python!')", interpreter = ["python", "-"] }
+nushell-script = { cmd = "print 'Hello from Nushell!'", interpreter = "nu {0}" }
+bash-script = { cmd = "echo 'Hello from Bash!'", interpreter = "bash" }
 ```
 
 You can modify this table using [`pixi task`](cli/pixi/task.md).

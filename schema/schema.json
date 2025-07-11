@@ -1883,7 +1883,15 @@
               "minItems": 1
             }
           ],
-          "examples": ["bash", "sh", "nu {0}", ["python", "-"], ["bash", "-"]]
+          "examples": [
+            "bash",
+            "sh",
+            "nu {0}",
+            ["python", "-"],
+            ["bash", "-"],
+            ["nu", "-"],
+            ["nu", "-c", "@"]
+          ]
         },
         "outputs": {
           "title": "Outputs",

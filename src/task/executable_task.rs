@@ -11,6 +11,7 @@ use deno_task_shell::{
     ShellPipeWriter, ShellState, execute_with_pipes, parser::SequentialList, pipe,
 };
 use fs_err::tokio as tokio_fs;
+use pixi_manifest::task::InterpreterFormat;
 use tempfile::{Builder, NamedTempFile};
 
 /// Contains the prepared execution data for a task with interpreter
@@ -50,16 +51,8 @@ impl ExecutableTask<'_> {
     pub async fn execute_with_interpreter(
         &self,
         command_env: &HashMap<OsString, OsString>,
-        interpreter: &[String],
+        interpreter_format: &InterpreterFormat,
     ) -> Result<RunOutput, TaskExecutionError> {
-        if interpreter.is_empty() {
-            return Ok(RunOutput {
-                exit_code: 0,
-                stdout: String::new(),
-                stderr: String::new(),
-            });
-        }
-
         let Some(script) = self.as_script()? else {
             return Ok(RunOutput {
                 exit_code: 0,
@@ -78,43 +71,118 @@ impl ExecutableTask<'_> {
 
         let cwd = self.working_directory()?;
 
-        // Check which execution approach to use based on placeholders
-        let has_tempfile_placeholder = interpreter.iter().any(|arg| arg == "-");
-        let has_inline_script_placeholder = interpreter.iter().any(|arg| arg == "@");
-        let has_stdin_placeholder = interpreter.iter().any(|arg| arg == "<");
-
-        // Validate that '<' placeholder appears only once and warn about its usage
-        if has_stdin_placeholder {
-            let stdin_count = interpreter.iter().filter(|arg| *arg == "<").count();
-            if stdin_count > 1 {
-                return Err(TaskExecutionError::InterpreterExecution(
-                    std::io::Error::new(
-                        std::io::ErrorKind::InvalidInput,
-                        "The '<' placeholder for stdin can only appear once in interpreter arguments",
-                    ),
-                ));
+        match interpreter_format {
+            InterpreterFormat::String(interpreter_str) => {
+                // Handle string format with {0} placeholder support
+                self.execute_with_string_interpreter(interpreter_str, &script, cwd, merged_env)
+                    .await
             }
+            InterpreterFormat::Array(interpreter) => {
+                // Handle array format with -, @, < placeholders
+                if interpreter.is_empty() {
+                    return Ok(RunOutput {
+                        exit_code: 0,
+                        stdout: String::new(),
+                        stderr: String::new(),
+                    });
+                }
 
-            // Warn about using '<' placeholder
-            eprintln!("⚠️  Warning: The '<' placeholder for explicit stdin is discouraged.");
-            eprintln!(
-                "   Consider using: interpreter = {:?}",
-                interpreter
-                    .iter()
-                    .filter(|arg| *arg != "<")
-                    .collect::<Vec<_>>()
-            );
+                // Check which execution approach to use based on placeholders
+                let has_tempfile_placeholder = interpreter.iter().any(|arg| arg == "-");
+                let has_inline_script_placeholder = interpreter.iter().any(|arg| arg == "@");
+                let has_stdin_placeholder = interpreter.iter().any(|arg| arg == "<");
+
+                // Validate that '<' placeholder appears only once and warn about its usage
+                if has_stdin_placeholder {
+                    let stdin_count = interpreter.iter().filter(|arg| *arg == "<").count();
+                    if stdin_count > 1 {
+                        return Err(TaskExecutionError::InterpreterExecution(
+                            std::io::Error::new(
+                                std::io::ErrorKind::InvalidInput,
+                                "The '<' placeholder for stdin can only appear once in interpreter arguments",
+                            ),
+                        ));
+                    }
+
+                    // Warn about using '<' placeholder
+                    eprintln!(
+                        "⚠️  Warning: The '<' placeholder for explicit stdin is discouraged."
+                    );
+                    eprintln!(
+                        "   Consider using: interpreter = {:?}",
+                        interpreter
+                            .iter()
+                            .filter(|arg| *arg != "<")
+                            .collect::<Vec<_>>()
+                    );
+                }
+
+                if has_tempfile_placeholder || has_inline_script_placeholder {
+                    // Use enhanced interpreter approach (handles "-" and "@" placeholders)
+                    self.execute_with_enhanced_interpreter(interpreter, &script, cwd, merged_env)
+                        .await
+                } else {
+                    // Use stdin approach (both traditional and explicit with '<' placeholder)
+                    self.execute_with_stdin(interpreter, &script, cwd, merged_env)
+                        .await
+                }
+            }
         }
+    }
 
-        if has_tempfile_placeholder || has_inline_script_placeholder {
-            // Use enhanced interpreter approach (handles "-" and "@" placeholders)
-            self.execute_with_enhanced_interpreter(interpreter, &script, cwd, merged_env)
-                .await
+    /// Execute interpreter using string format with {0} placeholder support
+    async fn execute_with_string_interpreter(
+        &self,
+        interpreter_str: &str,
+        script: &str,
+        cwd: PathBuf,
+        env: HashMap<OsString, OsString>,
+    ) -> Result<RunOutput, TaskExecutionError> {
+        // Create temporary file with appropriate extension
+        let extension = Self::get_script_extension_from_string(interpreter_str);
+        let temp_file = Builder::new()
+            .suffix(&extension)
+            .tempfile()
+            .map_err(TaskExecutionError::InterpreterExecution)?;
+
+        // Write script to temp file
+        std::fs::write(temp_file.path(), script)
+            .map_err(TaskExecutionError::InterpreterExecution)?;
+
+        // Get the temporary file path
+        let temp_path = temp_file.path().to_string_lossy().to_string();
+
+        // Handle {0} placeholder or append file path
+        let interpreter_with_file = if interpreter_str.contains("{0}") {
+            // Replace {0} placeholder with the temporary file path
+            interpreter_str.replace("{0}", &temp_path)
         } else {
-            // Use stdin approach (both traditional and explicit with '<' placeholder)
-            self.execute_with_stdin(interpreter, &script, cwd, merged_env)
-                .await
-        }
+            // Default behavior: append the temporary file path at the end
+            format!("{interpreter_str} {temp_path}")
+        };
+
+        // Parse the interpreter command
+        let interpreter_script = deno_task_shell::parser::parse(interpreter_with_file.trim())
+            .map_err(|e| {
+                TaskExecutionError::FailedToParseShellScript(FailedToParseShellScript::ParseError {
+                    source: e,
+                    task: interpreter_with_file.clone(),
+                })
+            })?;
+
+        // Create shell state and execute
+        let state = ShellState::new(env, cwd, Default::default(), Default::default());
+        let (stdout, stdout_handle) = get_output_writer_and_handle();
+        let (stderr, stderr_handle) = get_output_writer_and_handle();
+
+        let stdin = deno_task_shell::ShellPipeReader::stdin();
+        let code = execute_with_pipes(interpreter_script, state, stdin, stdout, stderr).await;
+
+        Ok(RunOutput {
+            exit_code: code,
+            stdout: stdout_handle.await.expect("should be able to get stdout"),
+            stderr: stderr_handle.await.expect("should be able to get stderr"),
+        })
     }
 
     /// Execute interpreter using enhanced approach with support for "-" and "@" placeholders
@@ -243,6 +311,17 @@ impl ExecutableTask<'_> {
             "powershell" | "pwsh" => ".ps1".to_string(),
             _ => ".script".to_string(),
         }
+    }
+
+    /// Get appropriate file extension for script based on interpreter string
+    fn get_script_extension_from_string(interpreter_str: &str) -> String {
+        // Extract the first word (the interpreter name) from the string
+        let interpreter_name = interpreter_str
+            .split_whitespace()
+            .next()
+            .unwrap_or(interpreter_str);
+
+        Self::get_script_extension(interpreter_name)
     }
 }
 
@@ -473,9 +552,9 @@ impl<'p> ExecutableTask<'p> {
         command_env: &HashMap<OsString, OsString>,
     ) -> Result<RunOutput, TaskExecutionError> {
         // If interpreter is specified, use std::process::Command directly
-        if let Some(interpreter) = self.task().interpreter() {
+        if let Some(interpreter_format) = self.task().interpreter_format() {
             return self
-                .execute_with_interpreter(command_env, interpreter)
+                .execute_with_interpreter(command_env, interpreter_format)
                 .await;
         }
 

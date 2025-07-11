@@ -14,17 +14,21 @@ use crate::{
 };
 
 /// Helper function to deserialize interpreter field that can be either a string or array
-fn deserialize_interpreter(th: &mut TableHelper) -> Result<Option<Vec<String>>, DeserError> {
+fn deserialize_interpreter(
+    th: &mut TableHelper,
+) -> Result<Option<crate::task::InterpreterFormat>, DeserError> {
     let interpreter = th.take("interpreter");
     if let Some((_, mut value)) = interpreter {
         match value.take() {
-            ValueInner::String(str) => Ok(Some(vec![str.into_owned()])),
+            ValueInner::String(str) => Ok(Some(crate::task::InterpreterFormat::String(
+                str.into_owned(),
+            ))),
             ValueInner::Array(array) => {
                 let mut interpreters = Vec::with_capacity(array.len());
                 for mut item in array {
                     interpreters.push(item.take_string(None)?.into_owned());
                 }
-                Ok(Some(interpreters))
+                Ok(Some(crate::task::InterpreterFormat::Array(interpreters)))
             }
             inner => Err(expected("string or array of strings", inner, value.span).into()),
         }

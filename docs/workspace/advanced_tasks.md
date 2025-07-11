@@ -353,7 +353,97 @@ This setting can also be set from the command line with `pixi run --clean-env TA
     On Windows it's hard to create a "clean environment" as `conda-forge` doesn't ship Windows compilers and Windows needs a lot of base variables.
     Making this feature not worthy of implementing as the amount of edge cases will make it unusable.
 
+## Interpreters
 
+Tasks can use custom interpreters to execute commands, providing better compatibility with different programming languages and shells. This is especially useful for interpreters that don't handle stdin well (like Nushell) or when you need specific interpreter flags.
+
+### String Format
+
+The string format supports `{0}` placeholder replacement where the temporary file path is substituted:
+
+```toml title="pixi.toml"
+[tasks]
+# Explicit {0} placeholder
+python-script = { cmd = "print('Hello from Python!')", interpreter = "python {0}" }
+
+# Without {0} - file path is appended automatically  
+bash-script = { cmd = "echo 'Hello from Bash!'", interpreter = "bash" }
+
+# With additional flags
+python-verbose = { cmd = "print('Verbose output')", interpreter = "python -u {0}" }
+
+# Multiple {0} placeholders (same file used for all)
+debug-script = { cmd = "print('Debug mode')", interpreter = "python -u {0} --debug {0}" }
+```
+
+### Array Format
+
+The array format uses placeholder characters in specific array elements:
+
+```toml title="pixi.toml"
+[tasks]
+# Temporary file approach (recommended for multi-line scripts)
+python-file = { cmd = "print('Hello')", interpreter = ["python", "-"] }
+
+# Inline script approach (good for single-line commands)
+python-inline = { cmd = "print('Hello')", interpreter = ["python", "-c", "@"] }
+
+# Explicit stdin approach (discouraged - use traditional stdin instead)
+python-stdin = { cmd = "print('Hello')", interpreter = ["python", "<"] }
+```
+
+### Placeholder Types
+
+| Placeholder | Format | Description | Use Case |
+|-------------|--------|-------------|----------|
+| `{0}` | String | Replaced with temp file path | Any string interpreter |
+| `-` | Array | Replaced with temp file path | Multi-line scripts, interpreters with stdin issues |
+| `@` | Array | Replaced with script content | Single-line commands, inline execution |
+| `<` | Array | Pipes to stdin (discouraged) | Legacy compatibility only |
+
+### Best Practices
+
+- **String format**: Use when you need simple interpreter execution with optional flags
+- **Temporary file (`-`)**: Use for multi-line scripts or interpreters that don't handle stdin well (like Nushell)
+- **Inline script (`@`)**: Use for single-line commands that accept script content as arguments
+- **Avoid stdin (`<`)**: The explicit stdin placeholder provides no benefit over traditional stdin
+
+### Examples
+
+```toml title="pixi.toml"
+[dependencies]
+python = ">=3.8"
+nushell = ">=0.95"
+
+[tasks]
+# Python examples
+py-string-explicit = { cmd = "print('String with {0}')", interpreter = "python {0}" }
+py-string-implicit = { cmd = "print('String without placeholder')", interpreter = "python" }
+py-array-file = { cmd = "print('Array with file')", interpreter = ["python", "-"] }
+py-array-inline = { cmd = "print('Array inline')", interpreter = ["python", "-c", "@"] }
+
+# Nushell examples (recommended approaches)
+nu-string = { cmd = "print 'Hello from Nushell'", interpreter = "nu {0}" }
+nu-file = { cmd = "print 'Complex script'", interpreter = ["nu", "-"] }
+nu-inline = { cmd = "print 'Simple command'", interpreter = ["nu", "-c", "@"] }
+
+# With flags
+nu-quiet = { cmd = "print 'Quiet mode'", interpreter = "nu --log-level error {0}" }
+py-optimized = { cmd = "print('Optimized')", interpreter = ["python", "-O", "-"] }
+```
+
+### File Extension Detection
+
+Pixi automatically selects appropriate file extensions for temporary files based on the interpreter:
+
+- `python`, `python3`, `py` → `.py`
+- `nu`, `nushell` → `.nu`  
+- `bash` → `.sh`
+- `sh` → `.sh`
+- `zsh` → `.zsh`
+- `fish` → `.fish`
+- `powershell`, `pwsh` → `.ps1`
+- Others → `.script`
 
 ## Our task runner: deno_task_shell
 

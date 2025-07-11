@@ -13,7 +13,9 @@ use itertools::Itertools;
 use miette::IntoDiagnostic;
 use pixi_manifest::{
     EnvironmentName, FeatureName,
-    task::{Alias, CmdArgs, Dependency, Execute, Task, TaskArg, TaskName, quote},
+    task::{
+        Alias, CmdArgs, Dependency, Execute, InterpreterFormat, Task, TaskArg, TaskName, quote,
+    },
 };
 use rattler_conda_types::Platform;
 use serde::Serialize;
@@ -213,7 +215,15 @@ impl From<AddArgs> for Task {
                 Some(env)
             };
             let args = value.args;
-            let interpreter = value.interpreter;
+            let interpreter = value.interpreter.map(|interp| {
+                if interp.len() == 1 {
+                    // Single element could be string format
+                    InterpreterFormat::String(interp.into_iter().next().unwrap())
+                } else {
+                    // Multiple elements are array format
+                    InterpreterFormat::Array(interp)
+                }
+            });
 
             Self::Execute(Box::new(Execute {
                 cmd: CmdArgs::Single(cmd_args.into()),
@@ -606,7 +616,7 @@ impl From<&Task> for TaskInfo {
                     .map(|output| output.source().to_string())
                     .collect()
             }),
-            interpreter: task.interpreter().map(|i| i.to_vec()),
+            interpreter: task.interpreter(),
         }
     }
 }
