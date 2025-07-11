@@ -138,10 +138,9 @@ impl ExecutableTask<'_> {
         cwd: PathBuf,
         env: HashMap<OsString, OsString>,
     ) -> Result<RunOutput, TaskExecutionError> {
-        // Create temporary file with appropriate extension
-        let extension = Self::get_script_extension_from_string(interpreter_str);
+        // Create temporary file with generic extension
         let temp_file = Builder::new()
-            .suffix(&extension)
+            .suffix(".script")
             .tempfile()
             .map_err(TaskExecutionError::InterpreterExecution)?;
 
@@ -197,10 +196,9 @@ impl ExecutableTask<'_> {
 
         // Create temporary file only if we have "-" placeholders
         let temp_file = if has_tempfile_placeholder {
-            // Create temporary file with appropriate extension
-            let extension = Self::get_script_extension(&interpreter[0]);
+            // Create temporary file with generic extension
             let temp_file = Builder::new()
-                .suffix(&extension)
+                .suffix(".script")
                 .tempfile()
                 .map_err(TaskExecutionError::InterpreterExecution)?;
 
@@ -297,31 +295,6 @@ impl ExecutableTask<'_> {
             stdout: String::from_utf8_lossy(&output.stdout).to_string(),
             stderr: String::from_utf8_lossy(&output.stderr).to_string(),
         })
-    }
-
-    /// Get appropriate file extension for script based on interpreter
-    fn get_script_extension(interpreter: &str) -> String {
-        match interpreter.to_lowercase().as_str() {
-            "python" | "python3" | "py" => ".py".to_string(),
-            "nu" | "nushell" => ".nu".to_string(),
-            "bash" => ".sh".to_string(),
-            "sh" => ".sh".to_string(),
-            "zsh" => ".zsh".to_string(),
-            "fish" => ".fish".to_string(),
-            "powershell" | "pwsh" => ".ps1".to_string(),
-            _ => ".script".to_string(),
-        }
-    }
-
-    /// Get appropriate file extension for script based on interpreter string
-    fn get_script_extension_from_string(interpreter_str: &str) -> String {
-        // Extract the first word (the interpreter name) from the string
-        let interpreter_name = interpreter_str
-            .split_whitespace()
-            .next()
-            .unwrap_or(interpreter_str);
-
-        Self::get_script_extension(interpreter_name)
     }
 }
 
