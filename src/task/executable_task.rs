@@ -3,6 +3,7 @@ use std::{
     collections::HashMap,
     ffi::OsString,
     fmt::{Display, Formatter},
+    io::Write,
     path::PathBuf,
 };
 
@@ -10,6 +11,14 @@ use deno_task_shell::{
     ShellPipeWriter, ShellState, execute_with_pipes, parser::SequentialList, pipe,
 };
 use fs_err::tokio as tokio_fs;
+use tempfile::NamedTempFile;
+
+/// Contains the prepared execution data for a task with interpreter
+pub(crate) struct PreparedExecution {
+    pub script: SequentialList,
+    pub stdin: deno_task_shell::ShellPipeReader,
+    pub _temp_file: Option<NamedTempFile>, // Keep temp file alive during execution
+}
 use itertools::Itertools;
 use miette::{Context, Diagnostic};
 use pixi_consts::consts;
@@ -237,13 +246,7 @@ impl<'p> ExecutableTask<'p> {
     /// Returns None if there is no script to execute (e.g., for alias tasks).
     pub(crate) fn prepare_execution(
         &self,
-    ) -> Result<
-        Option<(
-            deno_task_shell::parser::SequentialList,
-            deno_task_shell::ShellPipeReader,
-        )>,
-        FailedToParseShellScript,
-    > {
+    ) -> Result<Option<PreparedExecution>, FailedToParseShellScript> {
         let Some(interpreter) = self.task().interpreter() else {
             let Some(deno_script) = self.as_deno_script()? else {
                 // No script to execute
@@ -251,29 +254,59 @@ impl<'p> ExecutableTask<'p> {
             };
 
             let stdin = deno_task_shell::ShellPipeReader::stdin();
-            return Ok(Some((deno_script, stdin)));
+            return Ok(Some(PreparedExecution {
+                script: deno_script,
+                stdin,
+                _temp_file: None,
+            }));
         };
 
         let export = get_export_specific_task_env(self.task.as_ref());
-        let interpreter = (!export.is_empty())
-            .then(|| format!("{export}\n{interpreter}"))
-            .unwrap_or_else(|| interpreter.to_string());
         let Some(full_script) = self.as_script()? else {
             // No script to execute
             return Ok(None);
         };
+
+        // Create a temporary file to store the script
+        let mut temp_file =
+            tempfile::NamedTempFile::new().expect("Failed to create temporary file");
+        temp_file
+            .write_all(full_script.as_bytes())
+            .expect("Failed to write script to temporary file");
+        temp_file.flush().expect("Failed to flush temporary file");
+
+        // Get the temporary file path
+        let temp_path = temp_file.path().to_string_lossy().to_string();
+
+        // Modify the interpreter command to include the temporary file path
+        // Support GitHub-style template string {0} placeholder
+        let interpreter_with_file = if interpreter.contains("{0}") {
+            // Replace {0} placeholder with the temporary file path
+            interpreter.replace("{0}", &temp_path)
+        } else {
+            // Default behavior: append the temporary file path at the end
+            format!("{interpreter} {temp_path}")
+        };
+        let interpreter = if export.is_empty() {
+            interpreter_with_file
+        } else {
+            format!("{export}\n{interpreter_with_file}")
+        };
+
         let interpreter_script = deno_task_shell::parser::parse(interpreter.trim())
             .map_err(|e| FailedToParseShellScript::ParseError {
                 source: e,
                 task: interpreter.to_string(),
             })
             .expect("Failed to parse interpreter script");
-        let (stdin, mut stdin_writer) = pipe();
-        stdin_writer
-            .write_all(full_script.as_bytes())
-            .expect("Failed to write script to pipe");
-        drop(stdin_writer);
-        Ok(Some((interpreter_script, stdin)))
+
+        let stdin = deno_task_shell::ShellPipeReader::stdin();
+
+        Ok(Some(PreparedExecution {
+            script: interpreter_script,
+            stdin,
+            _temp_file: Some(temp_file), // Keep temp file alive during execution
+        }))
     }
 
     /// Executes the task and capture its output.
@@ -281,7 +314,7 @@ impl<'p> ExecutableTask<'p> {
         &self,
         command_env: &HashMap<OsString, OsString>,
     ) -> Result<RunOutput, TaskExecutionError> {
-        let Some((script, stdin)) = self.prepare_execution()? else {
+        let Some(prepared) = self.prepare_execution()? else {
             // No script to execute, return empty output
             return Ok(RunOutput {
                 exit_code: 0,
@@ -299,7 +332,7 @@ impl<'p> ExecutableTask<'p> {
             Default::default(),
             Default::default(),
         );
-        let code = execute_with_pipes(script, state, stdin, stdout, stderr).await;
+        let code = execute_with_pipes(prepared.script, state, prepared.stdin, stdout, stderr).await;
         Ok(RunOutput {
             exit_code: code,
             stdout: stdout_handle.await.expect("should be able to get stdout"),
