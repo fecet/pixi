@@ -64,7 +64,6 @@ pub use solve_group::SolveGroup;
 use tokio::sync::Semaphore;
 use url::Url;
 pub use workspace_mut::WorkspaceMut;
-use xxhash_rust::xxh3::xxh3_64;
 
 static CUSTOM_TARGET_DIR_WARN: OnceCell<()> = OnceCell::new();
 
@@ -336,11 +335,7 @@ impl Workspace {
     /// the config
     fn detached_environments_path(&self) -> Option<PathBuf> {
         if let Ok(Some(detached_environments_path)) = self.config().detached_environments().path() {
-            Some(detached_environments_path.join(format!(
-                "{}-{}",
-                self.display_name(),
-                xxh3_64(self.root.to_string_lossy().as_bytes())
-            )))
+            Some(detached_environments_path.join(self.display_name()))
         } else {
             None
         }
