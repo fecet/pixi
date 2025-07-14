@@ -71,7 +71,6 @@ pub use solve_group::SolveGroup;
 use tokio::sync::Semaphore;
 use url::Url;
 pub use workspace_mut::WorkspaceMut;
-use xxhash_rust::xxh3::xxh3_64;
 
 static CUSTOM_TARGET_DIR_WARN: OnceCell<()> = OnceCell::new();
 static CUSTOM_BUILD_DIR_WARN: OnceCell<()> = OnceCell::new();
@@ -502,11 +501,7 @@ impl Workspace {
     /// the config
     fn detached_environments_path(&self) -> Option<PathBuf> {
         if let Ok(Some(detached_environments_path)) = self.config().detached_environments_dir() {
-            Some(detached_environments_path.join(format!(
-                "{}-{}",
-                self.display_name(),
-                xxh3_64(self.root.to_string_lossy().as_bytes())
-            )))
+            Some(detached_environments_path.join(self.display_name()))
         } else {
             None
         }
@@ -1273,7 +1268,6 @@ mod tests {
     use pixi_config::{Config, DetachedEnvironments};
     use pixi_manifest::{FeatureName, FeaturesExt, HasWorkspaceManifest};
     use rattler_conda_types::{Platform, Version};
-    use xxhash_rust::xxh3::xxh3_64;
 
     use super::*;
 
@@ -1846,11 +1840,7 @@ platforms = []
         let dot_pixi = dunce::canonicalize(workspace_dir.path())
             .unwrap()
             .join(".pixi");
-        let detached_subdir = detached_dir.path().join(format!(
-            "{}-{}",
-            workspace.display_name(),
-            xxh3_64(workspace.root().to_string_lossy().as_bytes())
-        ));
+        let detached_subdir = detached_dir.path().join(workspace.display_name());
 
         // default_* methods always point at local .pixi
         assert_eq!(workspace.default_pixi_dir(), dot_pixi);
