@@ -816,11 +816,7 @@ impl Workspace {
             return None;
         }
         if let Ok(Some(detached_environments_path)) = self.config().detached_environments_dir() {
-            Some(detached_environments_path.join(format!(
-                "{}-{}",
-                self.display_name(),
-                xxh3_64(self.root.to_string_lossy().as_bytes())
-            )))
+            Some(detached_environments_path.join(self.display_name()))
         } else {
             None
         }
@@ -1582,7 +1578,6 @@ mod tests {
     use pypi_mapping::{MappingMode, ProjectDefinedChannelMapping, ProjectDefinedMappingLocation};
     use rattler_conda_types::{Channel, NamedChannelOrUrl, Platform, Version};
     use url::Url;
-    use xxhash_rust::xxh3::xxh3_64;
 
     use super::*;
 
@@ -2519,11 +2514,7 @@ print("hello")
         let dot_pixi = dunce::canonicalize(workspace_dir.path())
             .unwrap()
             .join(".pixi");
-        let detached_subdir = detached_dir.path().join(format!(
-            "{}-{}",
-            workspace.display_name(),
-            xxh3_64(workspace.root().to_string_lossy().as_bytes())
-        ));
+        let detached_subdir = detached_dir.path().join(workspace.display_name());
 
         // default_* methods always point at local .pixi
         assert_eq!(workspace.default_pixi_dir(), dot_pixi);
