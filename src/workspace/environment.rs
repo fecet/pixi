@@ -91,7 +91,18 @@ impl<'p> Environment<'p> {
     }
 
     /// Returns the directory where this environment is stored.
+    ///
+    /// This method first checks for any thread-local prefix overrides before
+    /// falling back to the default environment directory.
     pub fn dir(&self) -> std::path::PathBuf {
+        // Check for thread-local prefix override first
+        if let Some(override_path) =
+            crate::prefix_override::get_prefix_override(self.name().as_str())
+        {
+            return override_path;
+        }
+
+        // Fall back to default behavior
         self.workspace
             .environments_dir()
             .join(self.environment.name.as_str())
