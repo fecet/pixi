@@ -573,6 +573,8 @@ impl PixiControl {
                 },
                 config: Default::default(),
                 all: false,
+                to_prefix: None,
+                platform: None,
             },
         }
     }

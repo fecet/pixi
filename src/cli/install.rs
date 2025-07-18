@@ -1,13 +1,17 @@
+use std::path::PathBuf;
+
 use clap::Parser;
 use fancy_display::FancyDisplay;
 use itertools::Itertools;
 use pixi_config::ConfigCli;
+use rattler_conda_types::Platform;
 
 use crate::{
     UpdateLockFileOptions, WorkspaceLocator,
     cli::cli_config::WorkspaceConfig,
     environment::get_update_lock_file_and_prefixes,
     lock_file::{ReinstallPackages, UpdateMode},
+    prefix_override::PrefixOverrideGuard,
 };
 
 /// Install an environment, both updating the lockfile and installing the
@@ -29,6 +33,9 @@ use crate::{
 ///
 /// You can use `pixi reinstall` to reinstall all environments, one environment
 /// or just some packages of an environment.
+///
+/// Use the `--to-prefix` flag to install packages to a custom directory instead
+/// of the default environment location.
 #[derive(Parser, Debug)]
 pub struct Args {
     #[clap(flatten)]
@@ -47,20 +54,48 @@ pub struct Args {
     /// Install all environments
     #[arg(long, short, conflicts_with = "environment")]
     pub all: bool,
+
+    /// Install to a custom prefix directory instead of the default environment location
+    #[arg(long, value_name = "PREFIX", conflicts_with = "all")]
+    pub to_prefix: Option<PathBuf>,
+
+    /// The platform to install packages for (only used with --to-prefix)
+    #[arg(long, short = 'p', requires = "to_prefix")]
+    pub platform: Option<Platform>,
 }
 
 pub async fn execute(args: Args) -> miette::Result<()> {
+    use miette::{Context, IntoDiagnostic};
+
     let workspace = WorkspaceLocator::for_cli()
         .with_search_start(args.project_config.workspace_locator_start())
         .locate()?
         .with_cli_config(args.config);
 
+    // Setup custom prefix if specified
+    if let Some(prefix_path) = &args.to_prefix {
+        tokio::fs::create_dir_all(prefix_path)
+            .await
+            .into_diagnostic()
+            .with_context(|| {
+                format!(
+                    "Failed to create prefix directory: {}",
+                    prefix_path.display()
+                )
+            })?;
+    }
+
     // Install either:
-    //
     // 1. specific environments
     // 2. all environments
     // 3. default environment (if no environments are specified)
-    let envs = if let Some(envs) = args.environment {
+    let envs = if args.to_prefix.is_some() {
+        vec![
+            args.environment
+                .and_then(|envs| envs.into_iter().next())
+                .unwrap_or_else(|| "default".to_string()),
+        ]
+    } else if let Some(envs) = args.environment {
         envs
     } else if args.all {
         workspace
@@ -77,6 +112,11 @@ pub async fn execute(args: Args) -> miette::Result<()> {
         .into_iter()
         .map(|env| workspace.environment_from_name_or_env_var(Some(env)))
         .collect::<Result<Vec<_>, _>>()?;
+
+    // Use prefix override guard if installing to custom prefix
+    let _guard = args.to_prefix.as_ref().map(|prefix_path| {
+        PrefixOverrideGuard::new(environments[0].name().to_string(), prefix_path.clone())
+    });
 
     // Update the prefixes by installing all packages
     get_update_lock_file_and_prefixes(
@@ -97,12 +137,13 @@ pub async fn execute(args: Args) -> miette::Result<()> {
         .collect::<Vec<_>>();
 
     // Message what's installed
-    let detached_envs_message =
-        if let Ok(Some(path)) = workspace.config().detached_environments().path() {
-            format!(" in '{}'", console::style(path.display()).bold())
-        } else {
-            "".to_string()
-        };
+    let detached_envs_message = if let Some(prefix_path) = &args.to_prefix {
+        format!(" to '{}'", console::style(prefix_path.display()).bold())
+    } else if let Ok(Some(path)) = workspace.config().detached_environments().path() {
+        format!(" in '{}'", console::style(path.display()).bold())
+    } else {
+        "".to_string()
+    };
 
     if installed_envs.len() == 1 {
         eprintln!(
