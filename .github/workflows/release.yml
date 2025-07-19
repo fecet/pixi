@@ -168,6 +168,12 @@ jobs:
             echo "setting JEMALLOC_SYS_WITH_LG_PAGE=$JEMALLOC_SYS_WITH_LG_PAGE"
           fi
 
+          # Fix lzma-sys linking issues on musl targets by disabling fortification
+          if [[ "${{ toJson(matrix.targets) }}" == *"musl"* ]]; then
+            export CFLAGS="${CFLAGS:-} -U_FORTIFY_SOURCE"
+            echo "setting CFLAGS to disable fortification: $CFLAGS"
+          fi
+
           # Actually do builds and make zips and whatnot
           dist build ${{ needs.plan.outputs.tag-flag }} --print=linkage --output-format=json ${{ matrix.dist_args }} > dist-manifest.json
           echo "dist ran successfully"
