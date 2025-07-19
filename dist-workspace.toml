@@ -35,7 +35,8 @@ pr-run-mode = "skip"
 # Skip checking whether the specified configuration files are up to date
 allow-dirty = ["msi", "ci"]
 # Whether to sign macOS executables
-macos-sign = true
+# Disabled for fork repository as code signing secrets are not available
+macos-sign = false
 # Features to pass to cargo build
 features = ["self_update", "performance"]
 

@@ -188,6 +188,24 @@ jobs:
             echo "setting JEMALLOC_SYS_WITH_LG_PAGE=$JEMALLOC_SYS_WITH_LG_PAGE"
           fi
 
+          # Fix lzma-sys linking issues on musl targets by disabling fortification
+          if [[ "${{ toJson(matrix.targets) }}" == *"musl"* ]]; then
+            export CFLAGS="${CFLAGS:-} -U_FORTIFY_SOURCE"
+            echo "setting CFLAGS to disable fortification: $CFLAGS"
+          fi
+
+          # Clear code signing environment variables if certificate is not available
+          if [[ -z "${CODESIGN_CERTIFICATE}" ]]; then
+            echo "Code signing certificate not available, clearing signing environment variables"
+            unset CODESIGN_CERTIFICATE
+            unset CODESIGN_CERTIFICATE_PASSWORD
+            unset CODESIGN_IDENTITY
+            unset CODESIGN_ADDITIONAL_ARGS
+            unset APPLEID_TEAMID
+            unset APPLEID_USERNAME
+            unset APPLEID_PASSWORD
+          fi
+
           # Actually do builds and make zips and whatnot
           dist build ${{ needs.plan.outputs.tag-flag }} --print=linkage --output-format=json ${{ matrix.dist_args }} > dist-manifest.json
           echo "dist ran successfully"
