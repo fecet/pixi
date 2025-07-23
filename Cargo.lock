@@ -5605,8 +5605,7 @@ dependencies = [
 [[package]]
 name = "rattler_shell"
 version = "0.24.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc183de329999050a9cbfffee4edb05e6825865b04adff86e3def5272827cab6"
+source = "git+https://github.com/fecet/rattler?branch=rattler-shell#7dbc8e19f31811254daf184dc7ebee7e1be1f88f"
 dependencies = [
  "anyhow",
  "enum_dispatch",

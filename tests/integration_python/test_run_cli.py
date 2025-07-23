@@ -228,7 +228,7 @@ def test_run_with_activation(pixi: Path, tmp_pixi_workspace: Path) -> None:
     toml = f"""
     {EMPTY_BOILERPLATE_PROJECT}
     [activation.env]
-    TEST_ENV_VAR_FOR_ACTIVATION_TEST = "test123"
+    TEST_ENV_VAR_FOR_ACTIVATION_TEST = "$PIXI_PROJECT_ROOT/test123"
     [tasks]
     task = "echo $TEST_ENV_VAR_FOR_ACTIVATION_TEST"
     """
@@ -237,7 +237,8 @@ def test_run_with_activation(pixi: Path, tmp_pixi_workspace: Path) -> None:
     # Run the default task
     verify_cli_command(
         [pixi, "run", "--manifest-path", manifest, "task"],
-        stdout_contains="test123",
+        stdout_contains=["test123", "pixi/envs/default"],
+        stdout_excludes="$PIXI",
     )
 
     # Validate that without experimental it does not use the cache
