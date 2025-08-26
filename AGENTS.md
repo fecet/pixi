@@ -31,3 +31,39 @@
 ## Error messages
 
 - Authored diagnostic messages MUST start with a lowercase letter and end without a trailing dot. This does not apply to quoted upstream errors.
+
+## Project Structure & Module Organization
+- Rust workspace in `crates/` (primary binary: `crates/pixi`).
+- Tests: Rust integration tests in `crates/pixi/tests/integration_rust/`; `tests/integration_python/` and `tests/wheel_tests/` plus data/scripts in `tests/`.
+- Docs in `docs/` (MkDocs), schemas in `schema/`, examples in `examples/`, helper scripts in `scripts/`.
+- Config highlights: `pixi.toml` (tasks/envs), `lefthook.yaml` (git hooks), `clippy.toml`, `pyproject.toml` (ruff, pytest), `.dprint.jsonc`.
+
+## Build, Test, and Development Commands
+Each task below lives in exactly one environment of `pixi.toml`, so `pixi run <task>` picks it.
+- Setup: `pixi install` (creates the dev env).
+- Build (debug/release): `pixi run build-debug` / `pixi run build-release`.
+- Rust tests (fast/all): `pixi run test-fast` / `pixi run test-all-fast`.
+- Python integration tests: `pixi run test-integration-fast`.
+- Lint/format (all fast): `pixi run lint-fast`.
+- Install git hooks: `pixi run pre-commit-install`.
+- Docs local server: `pixi run docs`.
+
+## Coding Style & Naming Conventions
+- Rust: toolchain pinned in `rust-toolchain`; run `cargo fmt` and `cargo clippy` (no warnings). Naming: crates/modules `snake_case`, types `UpperCamelCase`, consts `SCREAMING_SNAKE_CASE`.
+- Python: `ruff format` + `ruff check --fix`; 4‑space indent; modules `snake_case`, classes `CapWords`, functions/vars `snake_case`. Type-check with `pixi run typecheck-python`.
+- Shell: format via `shfmt --indent=4`. TOML/YAML via `tombi`/`dprint`.
+
+## Testing Guidelines
+- Place Rust integration tests under `crates/pixi/tests/integration_rust/` (use `nextest`).
+- Place Python tests under `tests/integration_python/`; name files `test_*.py`. Use markers `slow`/`extra_slow` as needed (see `pyproject.toml`).
+- Useful commands: run a single test `pixi run test-specific-test -- test_substring=<pattern>`.
+
+## Commit & Pull Request Guidelines
+- Follow Conventional Commits (enforced by `cliff.toml`). Examples:
+  - `feat(cli): add task to build docs`
+  - `fix(resolver): handle url normalization`
+- PRs should include: clear description, linked issues, tests or docs updates, and passing CI. Run `lint-fast` and `test-all-fast` locally before requesting review.
+
+## Security & Configuration Tips
+- Never commit secrets; prefer env variables/files ignored by git.
+- Cross‑platform builds use `pixi` tasks; avoid system‑specific paths.
