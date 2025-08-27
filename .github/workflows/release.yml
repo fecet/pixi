@@ -360,7 +360,6 @@ jobs:
         with:
           name: artifacts-install.sh
           path: install/install.sh
-          path: install/install.ps1
 
   # Create a GitHub Release while uploading all files to it
   announce:
