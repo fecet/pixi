@@ -132,6 +132,8 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       BUILD_MANIFEST_NAME: target/distrib/${{ join(matrix.targets, '-') }}-dist-manifest.json
+      # Only set code signing environment variables if the certificate secret exists
+      # This prevents build failures in forks where signing secrets are not available
       CODESIGN_CERTIFICATE: ${{ secrets.CODESIGN_CERTIFICATE }}
       CODESIGN_CERTIFICATE_PASSWORD: ${{ secrets.CODESIGN_CERTIFICATE_PASSWORD }}
       CODESIGN_IDENTITY: ${{ secrets.CODESIGN_IDENTITY }}
@@ -192,6 +194,19 @@ jobs:
           if [[ "${{ toJson(matrix.targets) }}" == *"musl"* ]]; then
             export CFLAGS="${CFLAGS:-} -U_FORTIFY_SOURCE"
             echo "setting CFLAGS to disable fortification: $CFLAGS"
+          fi
+
+          # Clear code signing environment variables if certificate is not available
+          # This prevents dist from attempting to sign when secrets are missing in forks
+          if [[ -z "${CODESIGN_CERTIFICATE}" ]]; then
+            echo "Code signing certificate not available, clearing signing environment variables"
+            unset CODESIGN_CERTIFICATE
+            unset CODESIGN_CERTIFICATE_PASSWORD
+            unset CODESIGN_IDENTITY
+            unset CODESIGN_ADDITIONAL_ARGS
+            unset APPLEID_TEAMID
+            unset APPLEID_USERNAME
+            unset APPLEID_PASSWORD
           fi
 
           # Actually do builds and make zips and whatnot
