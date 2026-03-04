@@ -170,7 +170,7 @@ jobs:
         uses: baptiste0928/cargo-install@b687c656bda5733207e629b50a22bf68974a0305 # v3
         with:
           crate: cargo-zigbuild
-          version: "0.20.1"
+          version: "0.22.1"
 
       - uses: prefix-dev/setup-pixi@a0af7a228712d6121d37aba47adf55c1332c9c2e # v0.9.4
         with:
