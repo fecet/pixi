@@ -397,9 +397,20 @@ impl CommandDispatcherProcessor {
                     match message {
                         Some(message) => self.on_message(message),
                         None => {
-                            // If all the senders are dropped, the receiver will be closed. When this
-                            // happens, we can stop the command_dispatcher. All remaining tasks will be dropped
-                            // as `self.pending_futures` is dropped.
+                            // All senders have been dropped so no new messages will
+                            // arrive.  However, there may still be in-flight futures
+                            // (e.g. rattler `Installer::install`) whose inner
+                            // `tokio::spawn`'d download tasks are still running.
+                            // If we dropped `pending_futures` immediately those
+                            // spawned tasks would become orphans and be aborted on
+                            // runtime shutdown, causing partial writes and hash
+                            // mismatches for large packages.
+                            //
+                            // Drain remaining futures so every spawned subtask is
+                            // awaited through its JoinHandle before we exit.
+                            while let Some(result) = self.pending_futures.next().await {
+                                self.on_result(result);
+                            }
                             break;
                         }
                     }
