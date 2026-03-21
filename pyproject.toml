@@ -114,6 +114,7 @@ python-version = "3.13"
 exclude = [
   "**/*.ipynb",
   "scripts/test_native_certs.py",
+  "scripts/fork_ci_cleanup.py",
   "pixi-build-backends",
   "tests/data",
   "site",
