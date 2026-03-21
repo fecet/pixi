@@ -29,12 +29,6 @@ jobs:
           - os: ubuntu-latest
             artifact: pixi-linux-x86_64
             unit: true
-          - os: macos-14
-            artifact: pixi-macos-aarch64
-            unit: false
-          - os: windows-latest
-            artifact: pixi-windows-x86_64
-            unit: false
     runs-on: ${{ matrix.os }}
     env:
       TARGET_RELEASE: target/pixi/release

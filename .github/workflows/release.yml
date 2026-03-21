@@ -427,20 +427,6 @@ jobs:
             # Extract the artifact contents
             tar -xvf "$artifact" -O pixi > unpacked-artifacts/$base_name
           done
-      - name: Unpack binaries zip
-        run: |
-          set -e pipefail # fail if any command fails
-          for artifact in target/distrib/pixi-*.zip; do
-              echo artifact: $artifact
-              # Extract the base name without the extension
-              base_name=$(basename "$artifact" .zip)
-
-              # Extract the artifact contents
-              # Because zip is only used on windows we can assume the binary is an exe
-              unzip -p "$artifact" pixi.exe > unpacked-artifacts/$base_name.exe
-          done
-
-      # Upload unpacked artifacts, not sure how to do this in one go as you have to name the artifact
       - name: Upload unpacked artifact for pixi-aarch64-unknown-linux-musl
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
         with:
@@ -453,49 +439,11 @@ jobs:
           name: artifacts-pixi-x86_64-unknown-linux-musl
           path: unpacked-artifacts/pixi-x86_64-unknown-linux-musl
 
-      - name: Upload unpacked artifact for pixi-aarch64-apple-darwin
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
-        with:
-          name: artifacts-pixi-aarch64-apple-darwin
-          path: unpacked-artifacts/pixi-aarch64-apple-darwin
-
-      - name: Upload unpacked artifact for pixi-x86_64-apple-darwin
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
-        with:
-          name: artifacts-pixi-x86_64-apple-darwin
-          path: unpacked-artifacts/pixi-x86_64-apple-darwin
-
-      - name: Upload unpacked artifact for pixi-x86_64-pc-windows-msvc.exe
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
-        with:
-          name: artifacts-pixi-x86_64-pc-windows-msvc.exe
-          path: unpacked-artifacts/pixi-x86_64-pc-windows-msvc.exe
-
-      - name: Upload unpacked artifact for pixi-aarch64-pc-windows-msvc.exe
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
-        with:
-          name: artifacts-pixi-aarch64-pc-windows-msvc.exe
-          path: unpacked-artifacts/pixi-aarch64-pc-windows-msvc.exe
-
-      - name: Upload unpacked artifact for pixi-riscv64gc-unknown-linux-gnu
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
-        with:
-          name: artifacts-pixi-riscv64gc-unknown-linux-gnu
-          path: unpacked-artifacts/pixi-riscv64gc-unknown-linux-gnu
-
-      # Upload installer scripts
       - name: Upload install.sh
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
         with:
           name: artifacts-install.sh
           path: install/install.sh
-      - name: Upload install.ps1
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
-        with:
-          name: artifacts-install.ps1
-          path: install/install.ps1
-
-  # Create a GitHub Release while uploading all files to it
   announce:
     needs:
       - plan
