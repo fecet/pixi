@@ -107,6 +107,7 @@ ignore = [
   "**/*.ipynb",
   "**/docs_hooks.py",
   "scripts/test_native_certs.py",
+  "scripts/fork_ci_cleanup.py",
   "pixi-build-backends",
   "tests/data",
   "site",
