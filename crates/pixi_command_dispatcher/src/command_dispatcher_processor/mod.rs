@@ -397,9 +397,12 @@ impl CommandDispatcherProcessor {
                     match message {
                         Some(message) => self.on_message(message),
                         None => {
-                            // If all the senders are dropped, the receiver will be closed. When this
-                            // happens, we can stop the command_dispatcher. All remaining tasks will be dropped
-                            // as `self.pending_futures` is dropped.
+                            // Drain in-flight futures before exiting: rattler's
+                            // Installer spawns detached download tasks that would
+                            // become orphans and cause hash mismatches on shutdown.
+                            while let Some(result) = self.pending_futures.next().await {
+                                self.on_result(result);
+                            }
                             break;
                         }
                     }
