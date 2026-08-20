@@ -63,26 +63,14 @@ jobs:
       matrix:
         include:
           - target: x86_64-unknown-linux-musl
-            runner: namespace-profile-ubuntu-24-04-x86-64-8
+            runner: ubuntu-24.04
             builder: zigbuild
           - target: aarch64-unknown-linux-musl
-            runner: 8core_ubuntu_latest_runner
+            runner: ubuntu-latest
             builder: zigbuild
           - target: riscv64gc-unknown-linux-gnu
-            runner: 8core_ubuntu_latest_runner
+            runner: ubuntu-latest
             builder: zigbuild
-          - target: x86_64-apple-darwin
-            runner: namespace-profile-macos-15-arm64-6
-            builder: build
-          - target: aarch64-apple-darwin
-            runner: namespace-profile-macos-15-arm64-6
-            builder: build
-          - target: x86_64-pc-windows-msvc
-            runner: namespace-profile-windows-2022-x86-64-8
-            builder: build
-          - target: aarch64-pc-windows-msvc
-            runner: namespace-profile-windows-2022-x86-64-8
-            builder: build
     env:
       PUBLISHING: ${{ needs.prepare.outputs.publishing }}
       # macOS codesigning / notarization.
@@ -256,7 +244,3 @@ jobs:
 
       # Releases created with GITHUB_TOKEN do not cascade to other workflows, so
       # dispatch the docs deploy and WinGet publish explicitly.
-      - name: Trigger docs deploy
-        run: gh workflow run docs.yml --ref main --field tag="$TAG"
-      - name: Trigger WinGet publish
-        run: gh workflow run post_release.yml --field tag_name="$TAG"
