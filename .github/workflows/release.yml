@@ -20,7 +20,7 @@ env:
   CARGO_TERM_COLOR: always
   # Optimized release binaries, matching the former [profile.dist].
   CARGO_PROFILE_RELEASE_CODEGEN_UNITS: 1
-  CARGO_PROFILE_RELEASE_LTO: "fat"
+  CARGO_PROFILE_RELEASE_LTO: "thin"
   CARGO_PROFILE_RELEASE_OPT_LEVEL: 3
   CARGO_PROFILE_RELEASE_STRIP: symbols
 
@@ -63,25 +63,13 @@ jobs:
       matrix:
         include:
           - target: x86_64-unknown-linux-musl
-            runner: nscloud-ubuntu-24.04-amd64-16x32
+            runner: ubuntu-24.04
             pgo: true
           - target: aarch64-unknown-linux-musl
-            runner: 8core_ubuntu_latest_runner
+            runner: ubuntu-latest
             pgo: false
           - target: riscv64gc-unknown-linux-gnu
-            runner: 8core_ubuntu_latest_runner
-            pgo: false
-          - target: x86_64-apple-darwin
-            runner: namespace-profile-macos-15-arm64-6
-            pgo: false
-          - target: aarch64-apple-darwin
-            runner: nscloud-macos-sequoia-arm64-12x28
-            pgo: true
-          - target: x86_64-pc-windows-msvc
-            runner: namespace-profile-windows-2022-x86-64-8
-            pgo: true
-          - target: aarch64-pc-windows-msvc
-            runner: namespace-profile-windows-2022-x86-64-8
+            runner: ubuntu-latest
             pgo: false
     env:
       PUBLISHING: ${{ needs.prepare.outputs.publishing }}
@@ -252,7 +240,3 @@ jobs:
 
       # Releases created with GITHUB_TOKEN do not cascade to other workflows, so
       # dispatch the docs deploy and WinGet publish explicitly.
-      - name: Trigger docs deploy
-        run: gh workflow run docs.yml --ref main --field tag="$TAG"
-      - name: Trigger WinGet publish
-        run: gh workflow run post_release.yml --field tag_name="$TAG"
