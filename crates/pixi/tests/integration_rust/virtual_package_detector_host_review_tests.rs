@@ -3,7 +3,7 @@ use std::{path::Path, slice::from_ref, sync::Arc};
 use pixi_config::{Config, GlobalConfigSource};
 use pixi_core::{
     InstallFilter, UpdateLockFileOptions,
-    environment::LockFileUsage,
+    environment::{LockFileUsage, read_environment_file},
     host::{DenyAll, HostDetection, HostDetector, SkipReason, WantedNames},
     lock_file::{ReinstallPackages, UpdateMode},
     workspace::{DiscoveryStart, Workspace, WorkspaceLocator},
@@ -235,6 +235,95 @@ needs-good = "*"
         .unwrap();
     assert!(Arc::ptr_eq(&solve_host, &environment.host()));
     assert_eq!(runs(&counter), 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn quick_validate_with_source_packages_reuses_the_installed_host() {
+    let root = tempfile::tempdir().unwrap();
+    let channel_dir = root.path().join("channel");
+    let counter = root.path().join("runs");
+    write_channel_with(&channel_dir, &[counting_detector(&counter, REPORT)]).await;
+    let channel = Url::from_directory_path(channel_dir).unwrap();
+    let subdir = Subdir::current().unwrap();
+    let pixi = PixiControl::new().unwrap();
+    let local = pixi.workspace_path().join("local");
+    fs_err::create_dir_all(&local).unwrap();
+    fs_err::write(
+        pixi.manifest_path(),
+        format!(
+            r#"[workspace]
+name = "source-prefix-host"
+channels = ["{channel}"]
+platforms = ["{subdir}"]
+
+[pypi-dependencies]
+local = {{ path = {} }}
+"#,
+            toml_edit::Value::from(local.to_string_lossy().as_ref())
+        ),
+    )
+    .unwrap();
+    let locate = async || {
+        WorkspaceLocator::default()
+            .with_search_start(DiscoveryStart::ExplicitManifest(pixi.manifest_path()))
+            .with_global_config_source(GlobalConfigSource::None)
+            .with_cli_config(config(&root.path().join("cache"), &[(&channel, "allow")]))
+            .locate()
+            .await
+            .unwrap()
+    };
+    revalidate_locked_prefix(
+        &locate().await,
+        &lock_from_channel(&channel, &["needs-good"]),
+    )
+    .await;
+    assert_eq!(runs(&counter), 1);
+
+    // A second workspace starts without any detection in memory, like the
+    // next `pixi run` process.
+    let workspace = locate().await;
+    let environment = workspace.default_environment();
+    let (derived, _) = workspace
+        .update_lock_file(
+            None,
+            UpdateLockFileOptions {
+                lock_file_usage: LockFileUsage::Frozen,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    let selection = derived
+        .resolve_platform(
+            &environment,
+            pixi_core::workspace::platform_selection::PrefixPolicy::Replace,
+            UpdateMode::QuickValidate,
+        )
+        .await
+        .unwrap();
+    derived
+        .prefix(
+            &environment,
+            &selection,
+            UpdateMode::QuickValidate,
+            &ReinstallPackages::default(),
+            &InstallFilter::default(),
+        )
+        .await
+        .unwrap();
+
+    assert!(environment.host().detector_results().is_empty());
+    let recorded = read_environment_file(&environment.dir())
+        .unwrap()
+        .unwrap()
+        .detector_virtual_packages;
+    assert_eq!(
+        recorded
+            .keys()
+            .map(|name| name.as_normalized())
+            .collect::<Vec<_>>(),
+        ["__test_good"]
+    );
 }
 
 /// Locates a workspace whose repository configuration allows its detector

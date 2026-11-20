@@ -1083,22 +1083,25 @@ impl<'p> LockFileDerivedData<'p> {
                 .installed_resolved_platform()
                 .filter(|platform| environment.platforms().contains(platform.name())),
         };
-        let cached =
-            if prefix_policy == PrefixPolicy::Replace && update_mode == UpdateMode::QuickValidate {
-                candidate.is_some_and(|platform| {
-                    let Some(locked_environment) =
-                        self.lock_file.environment(environment.name().as_str())
-                    else {
-                        return false;
-                    };
-                    let hash =
-                        LockedEnvironmentHash::from_environment(locked_environment, Some(platform));
-                    self.prefix_is_current(environment, platform, &hash)
-                })
-            } else {
-                false
-            };
-        let policy = if prefix_policy == PrefixPolicy::Reuse || cached {
+        let installed = candidate.filter(|platform| {
+            prefix_policy == PrefixPolicy::Replace
+                && update_mode == UpdateMode::QuickValidate
+                && self.installed_from_lock(environment, platform).is_some()
+        });
+        let cached = installed.is_some_and(|platform| {
+            if self.contains_source_packages(environment, platform) {
+                tracing::debug!(
+                    "Lock file contains source packages: ignore lock file hash and update the prefix"
+                );
+                return false;
+            }
+            tracing::info!(
+                "Environment '{}' is up-to-date with lock file hash",
+                environment.name().fancy_display()
+            );
+            true
+        });
+        let policy = if prefix_policy == PrefixPolicy::Reuse || installed.is_some() {
             PrefixPolicy::Reuse
         } else {
             PrefixPolicy::Replace
@@ -1195,13 +1198,18 @@ impl<'p> LockFileDerivedData<'p> {
         {
             return Ok(Prefix::new(environment.dir()));
         }
+        let selected_platform = selection.platform();
+        let installed = (update_mode == UpdateMode::QuickValidate)
+            .then(|| self.installed_from_lock(environment, selected_platform))
+            .flatten();
         // Selecting an explicit target skips host detection, but the marker
         // must still record what the host provides, so later runs of the
         // installed prefix check the locked requirements against it.
-        self.workspace
-            .refresh_locked_environment_host(environment, &self.lock_file)
-            .await?;
-        let selected_platform = selection.platform();
+        if installed.is_none() {
+            self.workspace
+                .refresh_locked_environment_host(environment, &self.lock_file)
+                .await?;
+        }
         let hash = LockedEnvironmentHash::from_environment(
             self.locked_env(environment)?,
             Some(selected_platform),
@@ -1233,7 +1241,10 @@ impl<'p> LockFileDerivedData<'p> {
                 environment_lock_file_hash: hash,
                 resolved_platform: Some(resolved_platform),
                 minimum_supported_platform: Some(minimum_supported_platform),
-                detector_virtual_packages: environment.host().detector_virtual_packages(),
+                detector_virtual_packages: match installed {
+                    Some(file) => file.detector_virtual_packages,
+                    None => environment.host().detector_virtual_packages(),
+                },
                 source_fingerprints: Default::default(),
             },
         )?;
@@ -1267,60 +1278,58 @@ impl<'p> LockFileDerivedData<'p> {
         Ok(prefix)
     }
 
-    /// Whether the installed prefix matches `hash`, including source freshness.
-    fn prefix_is_current(
+    /// The environment file of the installed prefix, if the prefix was
+    /// installed from this lock file for `platform`.
+    fn installed_from_lock(
         &self,
         environment: &Environment<'p>,
         platform: &PixiPlatform,
-        hash: &LockedEnvironmentHash,
-    ) -> bool {
+    ) -> Option<EnvironmentFile> {
+        let locked_environment = self.lock_file.environment(environment.name().as_str())?;
+        let hash = LockedEnvironmentHash::from_environment(locked_environment, Some(platform));
         let Ok(Some(environment_file)) = read_environment_file(&environment.dir()) else {
             tracing::debug!(
                 "Environment file not found or parsable for '{}'",
                 environment.name().fancy_display()
             );
-            return false;
+            return None;
         };
+        (environment_file.environment_lock_file_hash == hash).then_some(environment_file)
+    }
 
-        if environment_file.environment_lock_file_hash == *hash {
-            // If the environment contains source packages the hash alone can't
-            // prove freshness, so update the prefix by default. Resolve the lock
-            // row like an install would: platforms with custom virtual packages
-            // (e.g. CUDA) are keyed by their platform name, not the bare subdir.
-            let contains_conda_source_pkgs = self
-                .lock_file
-                .environment(environment.name().as_str())
-                .is_some_and(|env| {
-                    resolve_lock_platform_for(&self.lock_file, platform)
-                        .and_then(|platform| env.conda_packages(platform))
-                        .is_some_and(|mut packages| {
-                            packages.any(|package| package.as_source().is_some())
-                        })
-                });
+    /// Whether `environment` has source packages, whose freshness the lock
+    /// file hash alone can't prove.
+    fn contains_source_packages(
+        &self,
+        environment: &Environment<'p>,
+        platform: &PixiPlatform,
+    ) -> bool {
+        // Resolve the lock row like an install would: platforms with custom
+        // virtual packages (e.g. CUDA) are keyed by their platform name, not
+        // the bare subdir.
+        let contains_conda_source_pkgs = self
+            .lock_file
+            .environment(environment.name().as_str())
+            .is_some_and(|env| {
+                resolve_lock_platform_for(&self.lock_file, platform)
+                    .and_then(|platform| env.conda_packages(platform))
+                    .is_some_and(|mut packages| {
+                        packages.any(|package| package.as_source().is_some())
+                    })
+            });
 
-            // Check if we have source packages from PyPI
-            // that is a directory, this is basically the only kind of source dependency
-            // that you'll modify on a general basis.
-            let contains_pypi_source_pkgs = environment
+        // Check if we have source packages from PyPI
+        // that is a directory, this is basically the only kind of source dependency
+        // that you'll modify on a general basis.
+        let contains_pypi_source_pkgs =
+            environment
                 .pypi_dependencies(Some(platform))
                 .iter()
                 .any(|(_, req)| {
                     req.iter()
                         .any(|dep| dep.as_path().map(|p| p.is_dir()).unwrap_or_default())
                 });
-            if contains_conda_source_pkgs || contains_pypi_source_pkgs {
-                tracing::debug!(
-                    "Lock file contains source packages: ignore lock file hash and update the prefix"
-                );
-            } else {
-                tracing::info!(
-                    "Environment '{}' is up-to-date with lock file hash",
-                    environment.name().fancy_display()
-                );
-                return true;
-            }
-        }
-        false
+        contains_conda_source_pkgs || contains_pypi_source_pkgs
     }
 
     /// Returns the up-to-date prefix for the given environment.
