@@ -264,7 +264,7 @@ def train(binary: Path, profile_dir: Path, working_dir: Path) -> None:
         ["--help"],
         ["task", "list", "-m", manifest],
         ["workspace", "environment", "list", "-m", manifest],
-        ["lock", "--dry-run", "-m", manifest],
+        ["lock", "-m", manifest],
         ["shell-hook", "--as-is", "-m", manifest],
         ["global", "list"],
     ]
